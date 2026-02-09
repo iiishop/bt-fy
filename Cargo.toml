@@ -10,12 +10,21 @@ rust-version = "1.77"
 name = "bt-fy"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
-[profile.release]
-opt-level = "s"
-
 [profile.dev]
-debug = true    # Symbols are nice, and they don't increase the size on Flash
-opt-level = "z"
+opt-level = "z"          # 最大化体积优化
+debug = false            # 禁用调试信息
+strip = true             # 剥离符号
+lto = true               # 完整LTO
+codegen-units = 1        # 单个代码生成单元以获得更好的优化
+panic = "abort"          # 使用abort而不是unwind
+
+[profile.release]
+opt-level = "z"          # 最大化体积优化
+debug = false
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
 
 [features]
 default = []
@@ -25,6 +34,9 @@ experimental = ["esp-idf-svc/experimental"]
 [dependencies]
 log = "0.4"
 esp-idf-svc = "0.51"
+esp-idf-hal = "0.45"
+heapless = "0.8"
+anyhow = "1.0"
 
 # --- Optional Embassy Integration ---
 # esp-idf-svc = { version = "0.51", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
@@ -45,3 +57,4 @@ esp-idf-svc = "0.51"
 
 [build-dependencies]
 embuild = "0.33"
+

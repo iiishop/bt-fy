@@ -1,10 +1,28 @@
 # Rust often needs a bit of an extra main task stack size compared to C (the default is 3K)
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=8000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=7000
 
-# Use this to set FreeRTOS kernel tick frequency to 1000 Hz (100 Hz by default).
-# This allows to use 1 ms granularity for thread sleeps (10 ms by default).
-#CONFIG_FREERTOS_HZ=1000
+# Use single factory app partition (2MB)
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 
-# Workaround for https://github.com/espressif/esp-idf/issues/7631
-#CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
-#CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=n
+# Disable Bluetooth completely
+CONFIG_BT_ENABLED=n
+
+# Compiler optimization for size
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# Logging - reduce verbosity
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+
+# Reduce bootloader log
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# DHCP Server configuration for Captive Portal
+CONFIG_LWIP_DHCPS=y
+CONFIG_LWIP_DHCPS_LEASE_UNIT=60
+CONFIG_LWIP_DHCPS_MAX_STATION_NUM=8
+
+# WiFi AP configuration
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
+CONFIG_ESP_WIFI_AP_BEACON_INTERVAL=100
+
