@@ -1,7 +1,9 @@
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
-use esp_idf_svc::io::Write;
+use esp_idf_svc::io::{EspIOError, Write};
 use log::info;
-use anyhow::Error;
+use std::net::Ipv4Addr;
+
+use super::captive::CaptivePortal;
 
 const WELCOME_HTML: &str = include_str!("welcome.html");
 
@@ -10,7 +12,7 @@ pub struct ButterflyWeb {
 }
 
 impl ButterflyWeb {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(ap_ip: Ipv4Addr) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Starting HTTP server...");
 
         let config = Configuration::default();
@@ -20,47 +22,23 @@ impl ButterflyWeb {
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |request| {
             let mut response = request.into_ok_response()?;
             response.write_all(WELCOME_HTML.as_bytes())?;
-            Ok::<(), Error>(())
+            Ok::<(), EspIOError>(())
         })?;
 
-        // Captive Portal: Apple's hotspot-detect
-        server.fn_handler(
-            "/hotspot-detect.html",
-            esp_idf_svc::http::Method::Get,
-            |request| {
-                let mut response = request.into_ok_response()?;
-                response.write_all(WELCOME_HTML.as_bytes())?;
-                Ok::<(), Error>(())
-            },
-        )?;
-
-        // Captive Portal: Android's connectivity check
-        server.fn_handler("/gen_204", esp_idf_svc::http::Method::Get, |request| {
-            request.into_response(302, Some("Found"), &[("Location", "http://192.168.71.1/")])?;
-            Ok::<(), Error>(())
-        })?;
-
-        // Captive Portal: Android variant
-        server.fn_handler("/generate_204", esp_idf_svc::http::Method::Get, |request| {
-            request.into_response(302, Some("Found"), &[("Location", "http://192.168.71.1/")])?;
-            Ok::<(), Error>(())
-        })?;
-
-        // Captive Portal: Windows connectivity check
-        server.fn_handler("/ncsi.txt", esp_idf_svc::http::Method::Get, |request| {
-            let mut response = request.into_ok_response()?;
-            response.write_all(b"Microsoft NCSI")?;
-            Ok::<(), Error>(())
-        })?;
+        // Attach captive portal detection handlers
+        // This handles all common OS captive portal detection endpoints
+        CaptivePortal::attach(&mut server, ap_ip)?;
 
         // Fallback handler for any other request - redirect to welcome
-        server.fn_handler("/*", esp_idf_svc::http::Method::Get, |request| {
-            request.into_response(302, Some("Found"), &[("Location", "http://192.168.71.1/")])?;
-            Ok::<(), Error>(())
+        let redirect_url = format!("http://{}/", ap_ip);
+        server.fn_handler("/*", esp_idf_svc::http::Method::Get, move |request| {
+            request.into_response(302, Some("Found"), &[("Location", redirect_url.as_str())])?;
+            Ok::<(), EspIOError>(())
         })?;
 
         info!("HTTP server started on port 80");
         info!("Captive Portal handlers registered");
+        info!("All unknown paths redirect to: http://{}/", ap_ip);
 
         Ok(Self { _server: server })
     }

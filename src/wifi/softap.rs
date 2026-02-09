@@ -1,6 +1,12 @@
 use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::ipv4::{self, Mask, RouterConfiguration, Subnet};
+use esp_idf_svc::netif::{EspNetif, NetifConfiguration, NetifStack};
 use esp_idf_svc::wifi::{AuthMethod, Configuration, EspWifi};
 use log::info;
+use std::net::Ipv4Addr;
+
+// Captive Portal IP address
+pub const AP_IP_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 71, 1);
 
 pub struct ButterflyAP<'a> {
     #[allow(dead_code)]
@@ -14,7 +20,27 @@ impl<'a> ButterflyAP<'a> {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing Butterfly SoftAP...");
 
-        let mut wifi = EspWifi::new(modem, sysloop, None)?;
+        // Create netif with custom IP configuration including DNS server
+        let ap_netif = EspNetif::new_with_conf(&NetifConfiguration {
+            ip_configuration: Some(ipv4::Configuration::Router(RouterConfiguration {
+                subnet: Subnet {
+                    gateway: AP_IP_ADDRESS,
+                    mask: Mask(24), // 255.255.255.0
+                },
+                dhcp_enabled: true,
+                // CRITICAL: Set DNS server to point to our own IP
+                // This allows the DNS server to intercept all DNS queries
+                dns: Some(AP_IP_ADDRESS),
+                secondary_dns: Some(AP_IP_ADDRESS),
+            })),
+            ..NetifConfiguration::wifi_default_router()
+        })?;
+
+        let mut wifi = EspWifi::wrap_all(
+            esp_idf_svc::wifi::WifiDriver::new(modem, sysloop, None)?,
+            EspNetif::new(NetifStack::Sta)?,
+            ap_netif,
+        )?;
 
         // Configure SoftAP
         let ssid = "butterfly";
@@ -35,13 +61,10 @@ impl<'a> ButterflyAP<'a> {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         info!("SoftAP '{}' is running!", ssid);
-
-        // Display network info
-        if let Ok(ip_info) = wifi.ap_netif().get_ip_info() {
-            info!("AP IP: {}", ip_info.ip);
-            info!("Connect to WiFi: {}", ssid);
-            info!("Then visit: http://{}", ip_info.ip);
-        }
+        info!("AP IP: {}", AP_IP_ADDRESS);
+        info!("DNS Server: {}", AP_IP_ADDRESS);
+        info!("Connect to WiFi: {}", ssid);
+        info!("Then visit: http://{}", AP_IP_ADDRESS);
 
         Ok(Self { wifi })
     }
@@ -52,7 +75,7 @@ impl<'a> ButterflyAP<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn get_ip(&self) -> Option<std::net::Ipv4Addr> {
-        self.wifi.ap_netif().get_ip_info().ok().map(|info| info.ip)
+    pub fn get_ip(&self) -> Ipv4Addr {
+        AP_IP_ADDRESS
     }
 }
