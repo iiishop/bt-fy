@@ -1,5 +1,5 @@
 # Rust often needs a bit of an extra main task stack size compared to C (the default is 3K)
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=7000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8000
 
 # Use single factory app partition (2MB)
 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
@@ -25,4 +25,11 @@ CONFIG_LWIP_DHCPS_MAX_STATION_NUM=8
 # WiFi AP configuration
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 CONFIG_ESP_WIFI_AP_BEACON_INTERVAL=100
+
+# HTTP Server configuration - CRITICAL for Captive Portal
+# Increase max request header length to handle long URLs and headers
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=8192
+# Increase max URI length
+CONFIG_HTTPD_MAX_URI_LEN=2048
+
 
