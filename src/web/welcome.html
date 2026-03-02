@@ -1,39 +1,446 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Butterfly</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Butterfly Debug</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        :root {
+            --bg: #0f0f0f;
+            --panel: #0a0a0a;
+            --border: #1f1f1f;
+            --text: #faf8f5;
+            --muted: #8a8a8a;
+            --accent: #c9a962;
+            --ok: #4ade80;
+            --live: #60a5fa;
+            --err: #f87171;
         }
 
-        .container {
-            text-align: center;
-            color: white;
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Manrope, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            min-height: 100vh;
+        }
+
+        .app {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         h1 {
-            font-size: 4em;
             margin: 0;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            font-family: "Playfair Display", Georgia, serif;
+            font-weight: 400;
+            font-size: 28px;
         }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .value {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .title {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 18px;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .dir-btn {
+            flex: 1;
+            min-height: 48px;
+            border: 1px solid var(--border);
+            background: #101010;
+            color: var(--text);
+            font-size: 13px;
+            border-radius: 0;
+            font-weight: 600;
+            transition: transform .06s ease, opacity .12s ease, box-shadow .12s ease;
+            touch-action: manipulation;
+        }
+
+        .dir-btn:active {
+            transform: scale(0.98);
+        }
+
+        .dir-btn.active {
+            background: var(--accent);
+            color: #0a0a0a;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(201, 169, 98, 0.45);
+        }
+
+        .slider-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .slider-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .slider-live {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 20px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 34px;
+            margin: 0;
+            background: transparent;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 14px;
+            background: linear-gradient(to right, var(--accent) 0 var(--fill, 0%), #1f1f1f var(--fill, 0%) 100%);
+            border-radius: 7px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            background: #faf8f5;
+            margin-top: -5px;
+        }
+
+        .hint {
+            font-size: 10px;
+            color: #686868;
+        }
+
+        .lights {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .light-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+        }
+
+        .dot.ok { background: var(--ok); }
+        .dot.live { background: var(--live); }
+        .dot.active { background: var(--accent); }
+        .dot.err { background: var(--err); }
+
+        .light-row.ok { color: var(--ok); }
+        .light-row.live { color: var(--live); }
+        .light-row.active { color: var(--accent); }
+        .light-row.err { color: var(--err); }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>Welcome Butterfly</h1>
-    </div>
-</body>
+<main class="app">
+    <h1>Butterfly Debug</h1>
 
+    <section class="card">
+        <div class="label">TOF Distance</div>
+        <div class="value"><span id="distance">--</span> mm</div>
+    </section>
+
+    <section class="card">
+        <div class="label">Motor Speed</div>
+        <div class="value"><span id="speed">--</span>%</div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">Motor Controls (Touch Optimized)</h2>
+        <div class="btn-row">
+            <button class="dir-btn" data-direction="forward">Forward</button>
+            <button class="dir-btn" data-direction="reverse">Reverse</button>
+            <button class="dir-btn" data-direction="brake">Brake</button>
+        </div>
+
+        <div class="slider-wrap">
+            <div class="slider-head">
+                <span class="label">Speed (live update)</span>
+                <span class="slider-live" id="speedLive">0%</span>
+            </div>
+            <input id="speedControl" type="range" min="0" max="100" step="1" value="0">
+            <div class="hint">Touch tip: drag slider to update motor in real time.</div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">Servo Angle (DS-S006L)</h2>
+        <div class="slider-wrap">
+            <div class="slider-head">
+                <span class="label">Angle (live update)</span>
+                <span class="slider-live" id="servoLive">90°</span>
+            </div>
+            <input id="servoControl" type="range" min="0" max="300" step="1" value="90">
+            <div class="hint">Range: 0° - 300°. Connected on GPIO3 (D1).</div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">API Status Lights</h2>
+        <div class="lights">
+            <div class="light-row" id="rowStatus"><span class="dot" id="dotStatus"></span><span>/api/status</span></div>
+            <div class="light-row" id="rowDistance"><span class="dot" id="dotDistance"></span><span>/api/distance</span></div>
+            <div class="light-row" id="rowMotor"><span class="dot" id="dotMotor"></span><span>/api/motor</span></div>
+            <div class="light-row" id="rowServo"><span class="dot" id="dotServo"></span><span>/api/servo</span></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    const distanceEl = document.getElementById("distance");
+    const speedEl = document.getElementById("speed");
+    const speedLiveEl = document.getElementById("speedLive");
+    const speedControlEl = document.getElementById("speedControl");
+    const servoLiveEl = document.getElementById("servoLive");
+    const servoControlEl = document.getElementById("servoControl");
+    const dirButtons = Array.from(document.querySelectorAll(".dir-btn"));
+
+    const rowStatus = document.getElementById("rowStatus");
+    const rowDistance = document.getElementById("rowDistance");
+    const rowMotor = document.getElementById("rowMotor");
+    const rowServo = document.getElementById("rowServo");
+    const dotStatus = document.getElementById("dotStatus");
+    const dotDistance = document.getElementById("dotDistance");
+    const dotMotor = document.getElementById("dotMotor");
+    const dotServo = document.getElementById("dotServo");
+
+    const state = {
+        speed: 0,
+        direction: "forward",
+        servoAngle: 90,
+        dragging: false,
+        draggingServo: false,
+        sendTimer: null,
+        servoTimer: null,
+    };
+
+    function setLight(row, dot, status) {
+        row.className = "light-row" + (status ? " " + status : "");
+        dot.className = "dot" + (status ? " " + status : "");
+    }
+
+    function setDirection(direction) {
+        state.direction = direction;
+        dirButtons.forEach((btn) => {
+            btn.classList.toggle("active", btn.dataset.direction === direction);
+        });
+    }
+
+    function updateSliderVisual(speed) {
+        const clamped = Math.max(0, Math.min(100, Number(speed) || 0));
+        speedControlEl.style.setProperty("--fill", clamped + "%");
+        speedControlEl.value = clamped;
+        speedLiveEl.textContent = clamped + "%";
+        speedEl.textContent = clamped;
+    }
+
+    function updateServoVisual(angle) {
+        const clamped = Math.max(0, Math.min(300, Number(angle) || 0));
+        servoControlEl.style.setProperty("--fill", (clamped / 3) + "%");
+        servoControlEl.value = clamped;
+        servoLiveEl.textContent = clamped + "\u00b0";
+    }
+
+    async function postMotor() {
+        try {
+            const response = await fetch("/api/motor", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ speed: state.speed, direction: state.direction }),
+            });
+
+            if (!response.ok) {
+                throw new Error("POST /api/motor failed");
+            }
+
+            if (state.speed > 0 && state.direction !== "brake") {
+                setLight(rowMotor, dotMotor, "active");
+            } else {
+                setLight(rowMotor, dotMotor, "ok");
+            }
+        } catch (err) {
+            console.error(err);
+            setLight(rowMotor, dotMotor, "err");
+        }
+    }
+
+    function scheduleMotorPost() {
+        clearTimeout(state.sendTimer);
+        state.sendTimer = setTimeout(postMotor, 90);
+    }
+
+    async function postServo() {
+        try {
+            const response = await fetch("/api/servo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ angle: state.servoAngle }),
+            });
+
+            if (!response.ok) {
+                throw new Error("POST /api/servo failed");
+            }
+
+            setLight(rowServo, dotServo, "active");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo, dotServo, "err");
+        }
+    }
+
+    function scheduleServoPost() {
+        clearTimeout(state.servoTimer);
+        state.servoTimer = setTimeout(postServo, 90);
+    }
+
+    async function refreshStatus() {
+        try {
+            const statusRes = await fetch("/api/status");
+            if (!statusRes.ok) throw new Error("status failed");
+            const status = await statusRes.json();
+            setLight(rowStatus, dotStatus, "ok");
+
+            if (!state.dragging) {
+                state.speed = Number(status.speed) || 0;
+                state.direction = status.direction || state.direction;
+                updateSliderVisual(state.speed);
+                setDirection(state.direction);
+            }
+
+            if (!state.draggingServo) {
+                state.servoAngle = Number(status.servo_angle);
+                if (Number.isNaN(state.servoAngle)) {
+                    state.servoAngle = 90;
+                }
+                updateServoVisual(state.servoAngle);
+            }
+
+            distanceEl.textContent = Number(status.distance) || 0;
+        } catch (err) {
+            console.error(err);
+            setLight(rowStatus, dotStatus, "err");
+        }
+
+        try {
+            const distanceRes = await fetch("/api/distance");
+            if (!distanceRes.ok) throw new Error("distance failed");
+            const distance = await distanceRes.json();
+            distanceEl.textContent = Number(distance.distance) || 0;
+            setLight(rowDistance, dotDistance, "live");
+        } catch (err) {
+            console.error(err);
+            setLight(rowDistance, dotDistance, "err");
+        }
+
+        try {
+            const servoRes = await fetch("/api/servo");
+            if (!servoRes.ok) throw new Error("servo failed");
+            const servo = await servoRes.json();
+            if (!state.draggingServo) {
+                state.servoAngle = Number(servo.angle);
+                if (Number.isNaN(state.servoAngle)) {
+                    state.servoAngle = 90;
+                }
+                updateServoVisual(state.servoAngle);
+            }
+            setLight(rowServo, dotServo, "ok");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo, dotServo, "err");
+        }
+    }
+
+    dirButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            setDirection(btn.dataset.direction);
+            postMotor();
+        });
+    });
+
+    speedControlEl.addEventListener("pointerdown", () => {
+        state.dragging = true;
+    });
+
+    speedControlEl.addEventListener("pointerup", () => {
+        state.dragging = false;
+        postMotor();
+    });
+
+    speedControlEl.addEventListener("input", () => {
+        state.speed = Number(speedControlEl.value) || 0;
+        updateSliderVisual(state.speed);
+        scheduleMotorPost();
+    });
+
+    servoControlEl.addEventListener("pointerdown", () => {
+        state.draggingServo = true;
+    });
+
+    servoControlEl.addEventListener("pointerup", () => {
+        state.draggingServo = false;
+        postServo();
+    });
+
+    servoControlEl.addEventListener("input", () => {
+        state.servoAngle = Number(servoControlEl.value) || 0;
+        updateServoVisual(state.servoAngle);
+        scheduleServoPost();
+    });
+
+    setDirection(state.direction);
+    updateSliderVisual(state.speed);
+    updateServoVisual(state.servoAngle);
+    refreshStatus();
+    setInterval(refreshStatus, 900);
+</script>
+</body>
 </html>

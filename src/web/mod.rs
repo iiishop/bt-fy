@@ -9,7 +9,7 @@ mod server;
 use log::info;
 use std::net::Ipv4Addr;
 
-pub use server::ButterflyWeb;
+pub use server::{ButterflyWeb, HardwareStatus};
 
 /// Web Service - high-level wrapper around the HTTP server
 ///
@@ -17,6 +17,7 @@ pub use server::ButterflyWeb;
 /// and handles various device detection mechanisms.
 pub struct WebService {
     ap_ip: Ipv4Addr,
+    hw_status: Option<HardwareStatus>,
     _server: Option<ButterflyWeb>,
 }
 
@@ -30,8 +31,14 @@ impl WebService {
 
         Ok(Self {
             ap_ip,
+            hw_status: None,
             _server: None,
         })
+    }
+
+    /// Set hardware status provider
+    pub fn set_hardware_status(&mut self, hw_status: HardwareStatus) {
+        self.hw_status = Some(hw_status);
     }
 
     /// Start the Web service
@@ -40,7 +47,7 @@ impl WebService {
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         info!("Starting Web server on http://{}...", self.ap_ip);
 
-        let server = ButterflyWeb::new(self.ap_ip)?;
+        let server = ButterflyWeb::new(self.ap_ip, self.hw_status.clone())?;
         self._server = Some(server);
 
         info!("Web server started successfully");
