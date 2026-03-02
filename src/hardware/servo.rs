@@ -7,7 +7,7 @@ use log::{info, warn};
 use std::sync::Mutex;
 
 use crate::system::config::{
-    SERVO_ANGLE_MAX, SERVO_ANGLE_MIN, SERVO_PIN, SERVO_PULSE_MAX_US, SERVO_PULSE_MIN_US,
+    SERVO_ANGLE_MAX, SERVO_ANGLE_MIN, SERVO_PULSE_MAX_US, SERVO_PULSE_MIN_US,
 };
 
 const SERVO_PWM_FREQ_HZ: u32 = 50;
@@ -20,25 +20,55 @@ pub struct ServoService {
 }
 
 impl ServoService {
-    pub fn new<C, T, PIN>(
+    /// Create a new servo using a **shared** LEDC timer (same timer for multiple servos).
+    /// Use this when driving two servos so they share one timer and avoid channel/timer conflicts.
+    pub fn new_with_shared_timer<C, T, PIN>(
         channel: impl Peripheral<P = C> + 'static,
-        timer: impl Peripheral<P = T> + 'static,
+        timer: &'static ledc::LedcTimerDriver<'static, T>,
         pin: impl Peripheral<P = PIN> + 'static,
+        gpio_pin: u8,
     ) -> Result<Self, Box<dyn std::error::Error>>
     where
         T: ledc::LedcTimer + 'static,
         C: ledc::LedcChannel<SpeedMode = <T as ledc::LedcTimer>::SpeedMode> + 'static,
         PIN: esp_idf_hal::gpio::OutputPin,
     {
-        info!("Initializing DS-S006L servo on GPIO{}", SERVO_PIN);
+        info!("Initializing DS-S006L servo on GPIO{}", gpio_pin);
+
+        let mut pwm = ledc::LedcDriver::new(channel, timer, pin)?;
+        let max_duty = pwm.get_max_duty();
+
+        let initial_angle = 90u16;
+        let initial_pulse = angle_to_pulse_us(initial_angle);
+        let initial_duty = pulse_to_duty(initial_pulse, max_duty);
+        pwm.set_duty(initial_duty)?;
+
+        Ok(Self {
+            angle: Mutex::new(initial_angle),
+            pwm: Mutex::new(pwm),
+            max_duty,
+        })
+    }
+
+    /// Create a new servo on the given LEDC channel/timer and GPIO pin (owns its own timer).
+    /// Prefer `new_with_shared_timer` when using two servos to share one timer.
+    pub fn new<C, T, PIN>(
+        channel: impl Peripheral<P = C> + 'static,
+        timer: impl Peripheral<P = T> + 'static,
+        pin: impl Peripheral<P = PIN> + 'static,
+        gpio_pin: u8,
+    ) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        T: ledc::LedcTimer + 'static,
+        C: ledc::LedcChannel<SpeedMode = <T as ledc::LedcTimer>::SpeedMode> + 'static,
+        PIN: esp_idf_hal::gpio::OutputPin,
+    {
+        info!("Initializing DS-S006L servo on GPIO{}", gpio_pin);
 
         let timer_cfg = ledc::config::TimerConfig::new()
             .frequency(SERVO_PWM_FREQ_HZ.Hz())
             .resolution(ledc::config::Resolution::Bits12);
         let timer_driver = ledc::LedcTimerDriver::new(timer, &timer_cfg)?;
-
-        // Keep timer driver alive for the entire program lifetime.
-        // Dropping it resets the timer and may stop PWM output.
         let leaked_timer = Box::leak(Box::new(timer_driver));
 
         let mut pwm = ledc::LedcDriver::new(channel, &*leaked_timer, pin)?;

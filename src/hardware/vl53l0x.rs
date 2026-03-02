@@ -35,10 +35,13 @@ impl VL53L0XService {
         let mut sensor =
             VL53L0x::new(i2c).map_err(|e| format!("Failed to initialize VL53L0X: {:?}", e))?;
 
-        // Set measurement timing budget (200ms for accurate readings)
-        sensor
-            .set_measurement_timing_budget(200000)
-            .map_err(|e| format!("Failed to set timing budget: {:?}", e))?;
+        // Set measurement timing budget (200ms for accurate readings); unit is microseconds
+        if !sensor
+            .set_measurement_timing_budget(200_000)
+            .map_err(|e| format!("Failed to set timing budget: {:?}", e))?
+        {
+            return Err("Timing budget 200ms too small for current config".into());
+        }
 
         // Start continuous ranging mode
         sensor
@@ -54,17 +57,22 @@ impl VL53L0XService {
                 info!("VL53L0X reading thread started");
 
                 loop {
-                    // Wait for measurement to be ready and read it
+                    // Wait for measurement to be ready and read it (value is in mm)
                     match sensor.read_range_continuous_millimeters_blocking() {
-                        Ok(range) => {
+                        Ok(raw_mm) => {
+                            // VL53L0X uses 8190/8191 as "no object" / out-of-range; treat as 0
+                            let valid_mm = if raw_mm >= 8190 { 0u16 } else { raw_mm };
                             if let Ok(mut dist) = distance_clone.lock() {
-                                *dist = range;
+                                *dist = valid_mm;
                             }
                         }
                         Err(e) => {
                             error!("Failed to read VL53L0X: {:?}", e);
-                            // Small delay before retry on error
-                            thread::sleep(Duration::from_millis(10));
+                            // Clear stale value so UI doesn't show a stuck reading
+                            if let Ok(mut dist) = distance_clone.lock() {
+                                *dist = 0;
+                            }
+                            thread::sleep(Duration::from_millis(50));
                         }
                     }
 

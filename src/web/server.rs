@@ -3,12 +3,16 @@ use esp_idf_svc::io::{EspIOError, Write};
 use log::{info, warn};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::mpsc;
 
-use crate::hardware::MotorDirection;
+use crate::wifi::{ApEntry, WifiCommand, WifiResponse};
 
 use super::captive::CaptivePortal;
+use super::WifiCmdTx;
 
 const WELCOME_HTML: &str = include_str!("welcome.html");
+const DEBUG_HTML: &str = include_str!("debug.html");
+const DASHBOARD_HTML: &str = include_str!("dashboard.html");
 
 pub struct ButterflyWeb {
     _server: EspHttpServer<'static>,
@@ -18,23 +22,22 @@ pub struct ButterflyWeb {
 #[derive(Clone)]
 pub struct HardwareStatus {
     pub distance: Arc<dyn Fn() -> u16 + Send + Sync>,
-    pub motor_speed: Arc<dyn Fn() -> u8 + Send + Sync>,
-    pub motor_direction: Arc<dyn Fn() -> MotorDirection + Send + Sync>,
-    pub motor_set: Arc<dyn Fn(u8, MotorDirection) -> Result<(), String> + Send + Sync>,
     pub servo_angle: Arc<dyn Fn() -> u16 + Send + Sync>,
     pub servo_set: Arc<dyn Fn(u16) -> Result<(), String> + Send + Sync>,
+    pub servo2_angle: Arc<dyn Fn() -> u16 + Send + Sync>,
+    pub servo2_set: Arc<dyn Fn(u16) -> Result<(), String> + Send + Sync>,
 }
 
 impl ButterflyWeb {
     pub fn new(
         ap_ip: Ipv4Addr,
         hw_status: Option<HardwareStatus>,
+        wifi_cmd_tx: Option<WifiCmdTx>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Starting HTTP server...");
 
-        // Configure HTTP server with larger buffer sizes for Captive Portal
         let config = Configuration {
-            max_uri_handlers: 32,
+            max_uri_handlers: 40,
             max_resp_headers: 8,
             max_sessions: 7,
             session_timeout: std::time::Duration::from_secs(20),
@@ -44,12 +47,132 @@ impl ButterflyWeb {
 
         let mut server = EspHttpServer::new(&config)?;
 
-        // Root handler - serves the welcome page
+        // Root - new welcome (WiFi list / setup)
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |request| {
             let mut response = request.into_ok_response()?;
             response.write_all(WELCOME_HTML.as_bytes())?;
             Ok::<(), EspIOError>(())
         })?;
+
+        server.fn_handler("/debug.html", esp_idf_svc::http::Method::Get, |request| {
+            let mut response = request.into_ok_response()?;
+            response.write_all(DEBUG_HTML.as_bytes())?;
+            Ok::<(), EspIOError>(())
+        })?;
+
+        server.fn_handler("/dashboard.html", esp_idf_svc::http::Method::Get, |request| {
+            let mut response = request.into_ok_response()?;
+            response.write_all(DASHBOARD_HTML.as_bytes())?;
+            Ok::<(), EspIOError>(())
+        })?;
+
+        // WiFi API (only if channel provided)
+        if let Some(tx) = wifi_cmd_tx {
+            let tx_scan = tx.clone();
+            server.fn_handler(
+                "/api/wifi/scan",
+                esp_idf_svc::http::Method::Get,
+                move |_request| {
+                    let (reply_tx, reply_rx) = mpsc::channel();
+                    let _ = tx_scan.send((WifiCommand::Scan, reply_tx));
+                    let json = match reply_rx.recv() {
+                        Ok(WifiResponse::Scan(list)) => wifi_scan_json(&list),
+                        _ => r#"{"networks":[]}"#.to_string(),
+                    };
+                    let mut response = _request.into_ok_response()?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            let tx_status = tx.clone();
+            server.fn_handler(
+                "/api/wifi/status",
+                esp_idf_svc::http::Method::Get,
+                move |_request| {
+                    let (reply_tx, reply_rx) = mpsc::channel();
+                    let _ = tx_status.send((WifiCommand::GetStatus, reply_tx));
+                    let json = match reply_rx.recv() {
+                        Ok(WifiResponse::Status(Some(s))) => {
+                            format!(r#"{{"connected":true,"ip":"{}","ssid":"{}"}}"#, s.ip, escape_json(&s.ssid))
+                        }
+                        _ => r#"{"connected":false}"#.to_string(),
+                    };
+                    let mut response = _request.into_ok_response()?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            let tx_connect = tx.clone();
+            server.fn_handler(
+                "/api/wifi/connect",
+                esp_idf_svc::http::Method::Post,
+                move |mut request| {
+                    let mut body = [0u8; 512];
+                    let mut size = 0usize;
+                    loop {
+                        let read = request.read(&mut body[size..])?;
+                        if read == 0 {
+                            break;
+                        }
+                        size += read;
+                        if size >= body.len() {
+                            break;
+                        }
+                    }
+                    let payload = std::str::from_utf8(&body[..size]).unwrap_or("");
+                    let (ssid, password, username, auth) = parse_connect_body(payload);
+                    let cmd = WifiCommand::Connect {
+                        ssid,
+                        password,
+                        username,
+                        auth,
+                    };
+                    let (reply_tx, reply_rx) = mpsc::channel();
+                    let _ = tx_connect.send((cmd, reply_tx));
+                    let (code, json) = match reply_rx.recv() {
+                        Ok(WifiResponse::Connect(Ok(sta))) => (
+                            200,
+                            format!(
+                                r#"{{"ok":true,"ip":"{}","ssid":"{}"}}"#,
+                                sta.ip,
+                                escape_json(&sta.ssid)
+                            ),
+                        ),
+                        Ok(WifiResponse::Connect(Err(e))) => {
+                            (400, format!(r#"{{"ok":false,"error":"{}"}}"#, escape_json(&e)))
+                        }
+                        _ => (500, r#"{"ok":false,"error":"timeout"}"#.to_string()),
+                    };
+                    let mut response = request.into_response(code, Some(if code == 200 { "OK" } else { "Error" }), &[])?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            let tx_stop = tx.clone();
+            server.fn_handler(
+                "/api/wifi/stop_ap",
+                esp_idf_svc::http::Method::Post,
+                move |request| {
+                    let (reply_tx, reply_rx) = mpsc::channel();
+                    let _ = tx_stop.send((WifiCommand::StopAp, reply_tx));
+                    let (code, json) = match reply_rx.recv() {
+                        Ok(WifiResponse::StopAp(Ok(()))) => (200, r#"{"ok":true}"#.to_string()),
+                        Ok(WifiResponse::StopAp(Err(e))) => {
+                            (500, format!(r#"{{"ok":false,"error":"{}"}}"#, escape_json(&e)))
+                        }
+                        _ => (500, r#"{"ok":false,"error":"timeout"}"#.to_string()),
+                    };
+                    let mut response = request.into_response(code, Some("OK"), &[])?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            info!("WiFi API endpoints registered");
+        }
 
         // API endpoints for hardware status
         if let Some(hw) = hw_status {
@@ -59,13 +182,12 @@ impl ButterflyWeb {
                 esp_idf_svc::http::Method::Get,
                 move |request| {
                     let distance = (hw_clone.distance)();
-                    let speed = (hw_clone.motor_speed)();
-                    let direction = (hw_clone.motor_direction)().as_str();
                     let servo_angle = (hw_clone.servo_angle)();
+                    let servo2_angle = (hw_clone.servo2_angle)();
 
                     let json = format!(
-                        r#"{{"distance":{},"speed":{},"direction":"{}","servo_angle":{}}}"#,
-                        distance, speed, direction, servo_angle
+                        r#"{{"distance":{},"servo_angle":{},"servo2_angle":{}}}"#,
+                        distance, servo_angle, servo2_angle
                     );
 
                     let mut response = request.into_ok_response()?;
@@ -88,81 +210,7 @@ impl ButterflyWeb {
                 },
             )?;
 
-            // Motor status endpoint
-            let hw_clone3 = hw.clone();
-            server.fn_handler(
-                "/api/motor",
-                esp_idf_svc::http::Method::Get,
-                move |request| {
-                    let speed = (hw_clone3.motor_speed)();
-                    let direction = (hw_clone3.motor_direction)().as_str();
-                    let json = format!(
-                        r#"{{"speed":{},"direction":"{}","status":"ok"}}"#,
-                        speed, direction
-                    );
-
-                    let mut response = request.into_ok_response()?;
-                    response.write_all(json.as_bytes())?;
-                    Ok::<(), EspIOError>(())
-                },
-            )?;
-
-            // Motor control endpoint
-            let hw_clone4 = hw.clone();
-            server.fn_handler(
-                "/api/motor",
-                esp_idf_svc::http::Method::Post,
-                move |mut request| {
-                    let mut body = [0u8; 256];
-                    let mut size = 0usize;
-                    loop {
-                        let read = request.read(&mut body[size..])?;
-                        if read == 0 {
-                            break;
-                        }
-                        size += read;
-                        if size >= body.len() {
-                            break;
-                        }
-                    }
-
-                    let payload = std::str::from_utf8(&body[..size]).unwrap_or("");
-                    info!("/api/motor payload: {}", payload);
-
-                    let speed = parse_speed(payload).unwrap_or_else(|| (hw_clone4.motor_speed)());
-                    let direction =
-                        parse_direction(payload).unwrap_or_else(|| (hw_clone4.motor_direction)());
-
-                    info!(
-                        "/api/motor parsed speed={}, direction={}",
-                        speed,
-                        direction.as_str()
-                    );
-
-                    match (hw_clone4.motor_set)(speed, direction) {
-                        Ok(()) => {
-                            let json = format!(
-                                r#"{{"ok":true,"speed":{},"direction":"{}"}}"#,
-                                speed,
-                                direction.as_str()
-                            );
-                            let mut response = request.into_ok_response()?;
-                            response.write_all(json.as_bytes())?;
-                        }
-                        Err(err) => {
-                            warn!("/api/motor set failed: {}", err);
-                            let json = format!(r#"{{"ok":false,"error":"{}"}}"#, err);
-                            let mut response =
-                                request.into_response(500, Some("Internal Server Error"), &[])?;
-                            response.write_all(json.as_bytes())?;
-                        }
-                    }
-
-                    Ok::<(), EspIOError>(())
-                },
-            )?;
-
-            // Servo status endpoint
+            // Servo 1 status endpoint
             let hw_clone5 = hw.clone();
             server.fn_handler(
                 "/api/servo",
@@ -176,7 +224,7 @@ impl ButterflyWeb {
                 },
             )?;
 
-            // Servo control endpoint
+            // Servo 1 control endpoint
             let hw_clone6 = hw.clone();
             server.fn_handler(
                 "/api/servo",
@@ -196,10 +244,7 @@ impl ButterflyWeb {
                     }
 
                     let payload = std::str::from_utf8(&body[..size]).unwrap_or("");
-                    info!("/api/servo payload: {}", payload);
-
                     let angle = parse_angle(payload).unwrap_or_else(|| (hw_clone6.servo_angle)());
-                    info!("/api/servo parsed angle={}", angle);
 
                     match (hw_clone6.servo_set)(angle) {
                         Ok(()) => {
@@ -209,6 +254,61 @@ impl ButterflyWeb {
                         }
                         Err(err) => {
                             warn!("/api/servo set failed: {}", err);
+                            let json = format!(r#"{{"ok":false,"error":"{}"}}"#, err);
+                            let mut response =
+                                request.into_response(500, Some("Internal Server Error"), &[])?;
+                            response.write_all(json.as_bytes())?;
+                        }
+                    }
+
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            // Servo 2 status endpoint
+            let hw_clone7 = hw.clone();
+            server.fn_handler(
+                "/api/servo2",
+                esp_idf_svc::http::Method::Get,
+                move |request| {
+                    let angle = (hw_clone7.servo2_angle)();
+                    let json = format!(r#"{{"angle":{},"status":"ok"}}"#, angle);
+                    let mut response = request.into_ok_response()?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
+
+            // Servo 2 control endpoint
+            let hw_clone8 = hw.clone();
+            server.fn_handler(
+                "/api/servo2",
+                esp_idf_svc::http::Method::Post,
+                move |mut request| {
+                    let mut body = [0u8; 256];
+                    let mut size = 0usize;
+                    loop {
+                        let read = request.read(&mut body[size..])?;
+                        if read == 0 {
+                            break;
+                        }
+                        size += read;
+                        if size >= body.len() {
+                            break;
+                        }
+                    }
+
+                    let payload = std::str::from_utf8(&body[..size]).unwrap_or("");
+                    let angle = parse_angle(payload).unwrap_or_else(|| (hw_clone8.servo2_angle)());
+
+                    match (hw_clone8.servo2_set)(angle) {
+                        Ok(()) => {
+                            let json = format!(r#"{{"ok":true,"angle":{}}}"#, angle);
+                            let mut response = request.into_ok_response()?;
+                            response.write_all(json.as_bytes())?;
+                        }
+                        Err(err) => {
+                            warn!("/api/servo2 set failed: {}", err);
                             let json = format!(r#"{{"ok":false,"error":"{}"}}"#, err);
                             let mut response =
                                 request.into_response(500, Some("Internal Server Error"), &[])?;
@@ -250,48 +350,6 @@ impl ButterflyWeb {
     }
 }
 
-fn parse_speed(payload: &str) -> Option<u8> {
-    let key = "\"speed\"";
-    let idx = payload.find(key)?;
-    let rest = &payload[idx + key.len()..];
-    let colon = rest.find(':')?;
-
-    let mut digits = String::new();
-    for c in rest[colon + 1..].chars() {
-        if c.is_ascii_digit() {
-            digits.push(c);
-        } else if !digits.is_empty() {
-            break;
-        }
-    }
-
-    if digits.is_empty() {
-        return None;
-    }
-
-    digits.parse::<u8>().ok().map(|n| n.min(100))
-}
-
-fn parse_direction(payload: &str) -> Option<MotorDirection> {
-    let compact = payload
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect::<String>()
-        .to_ascii_lowercase();
-
-    if compact.contains("\"direction\":\"forward\"") {
-        Some(MotorDirection::Forward)
-    } else if compact.contains("\"direction\":\"reverse\"") {
-        Some(MotorDirection::Reverse)
-    } else if compact.contains("\"direction\":\"brake\"") {
-        Some(MotorDirection::Brake)
-    } else if compact.contains("\"direction\":\"coast\"") {
-        Some(MotorDirection::Coast)
-    } else {
-        None
-    }
-}
-
 fn parse_angle(payload: &str) -> Option<u16> {
     let key = "\"angle\"";
     let idx = payload.find(key)?;
@@ -312,4 +370,71 @@ fn parse_angle(payload: &str) -> Option<u16> {
     }
 
     digits.parse::<u16>().ok().map(|n| n.min(300))
+}
+
+fn wifi_scan_json(list: &[ApEntry]) -> String {
+    let parts: Vec<String> = list
+        .iter()
+        .map(|ap| {
+            format!(
+                r#"{{"ssid":"{}","rssi":{},"auth":"{}"}}"#,
+                escape_json(&ap.ssid),
+                ap.rssi,
+                escape_json(&ap.auth)
+            )
+        })
+        .collect();
+    format!(r#"{{"networks":[{}]}}"#, parts.join(","))
+}
+
+fn escape_json(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn parse_connect_body(payload: &str) -> (String, Option<String>, Option<String>, String) {
+    let compact: String = payload
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let ssid = extract_json_string(&compact, "ssid").unwrap_or_default();
+    let password = extract_json_string(&compact, "password");
+    let username = extract_json_string(&compact, "username");
+    let auth = extract_json_string(&compact, "auth").unwrap_or_else(|| "wpa2".to_string());
+    (ssid, password, username, auth)
+}
+
+fn extract_json_string(compact: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\":\"", key);
+    let start = compact.find(&needle)?;
+    let rest = &compact[start + needle.len()..];
+    let mut end = 0;
+    let mut escape = false;
+    for (i, c) in rest.chars().enumerate() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if c == '\\' {
+            escape = true;
+            continue;
+        }
+        if c == '"' {
+            end = i;
+            break;
+        }
+    }
+    let s = &rest[..end];
+    let s = s.replace("\\\"", "\"").replace("\\\\", "\\");
+    Some(s)
 }

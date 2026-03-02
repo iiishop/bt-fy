@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Butterfly Debug</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --panel: #0a0a0a;
+            --border: #1f1f1f;
+            --text: #faf8f5;
+            --muted: #8a8a8a;
+            --accent: #c9a962;
+            --ok: #4ade80;
+            --live: #60a5fa;
+            --err: #f87171;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Manrope, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            min-height: 100vh;
+        }
+
+        .app {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        h1 {
+            margin: 0;
+            font-family: "Playfair Display", Georgia, serif;
+            font-weight: 400;
+            font-size: 28px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .value {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .title {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 18px;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .dir-btn {
+            flex: 1;
+            min-height: 48px;
+            border: 1px solid var(--border);
+            background: #101010;
+            color: var(--text);
+            font-size: 13px;
+            border-radius: 0;
+            font-weight: 600;
+            transition: transform .06s ease, opacity .12s ease, box-shadow .12s ease;
+            touch-action: manipulation;
+        }
+
+        .dir-btn:active {
+            transform: scale(0.98);
+        }
+
+        .dir-btn.active {
+            background: var(--accent);
+            color: #0a0a0a;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(201, 169, 98, 0.45);
+        }
+
+        .slider-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .slider-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .slider-live {
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 20px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 34px;
+            margin: 0;
+            background: transparent;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 14px;
+            background: linear-gradient(to right, var(--accent) 0 var(--fill, 0%), #1f1f1f var(--fill, 0%) 100%);
+            border-radius: 7px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            background: #faf8f5;
+            margin-top: -5px;
+        }
+
+        .hint {
+            font-size: 10px;
+            color: #686868;
+        }
+
+        .lights {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .light-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+        }
+
+        .dot.ok { background: var(--ok); }
+        .dot.live { background: var(--live); }
+        .dot.active { background: var(--accent); }
+        .dot.err { background: var(--err); }
+
+        .light-row.ok { color: var(--ok); }
+        .light-row.live { color: var(--live); }
+        .light-row.active { color: var(--accent); }
+        .light-row.err { color: var(--err); }
+    </style>
+</head>
+<body>
+<main class="app">
+    <h1>Butterfly Debug</h1>
+
+    <section class="card">
+        <div class="label">TOF Distance</div>
+        <div class="value"><span id="distance">--</span> mm</div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">Servo 1 (GPIO3)</h2>
+        <div class="slider-wrap">
+            <div class="slider-head">
+                <span class="label">Angle (live update)</span>
+                <span class="slider-live" id="servoLive">90°</span>
+            </div>
+            <input id="servoControl" type="range" min="0" max="300" step="1" value="90">
+            <div class="hint">Range: 0° - 300°. DS-S006L on GPIO3.</div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">Servo 2 (GPIO4)</h2>
+        <div class="slider-wrap">
+            <div class="slider-head">
+                <span class="label">Angle (live update)</span>
+                <span class="slider-live" id="servo2Live">90°</span>
+            </div>
+            <input id="servo2Control" type="range" min="0" max="300" step="1" value="90">
+            <div class="hint">Range: 0° - 300°. DS-S006L on GPIO4.</div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="title">API Status Lights</h2>
+        <div class="lights">
+            <div class="light-row" id="rowStatus"><span class="dot" id="dotStatus"></span><span>/api/status</span></div>
+            <div class="light-row" id="rowDistance"><span class="dot" id="dotDistance"></span><span>/api/distance</span></div>
+            <div class="light-row" id="rowServo"><span class="dot" id="dotServo"></span><span>/api/servo</span></div>
+            <div class="light-row" id="rowServo2"><span class="dot" id="dotServo2"></span><span>/api/servo2</span></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    const distanceEl = document.getElementById("distance");
+    const servoLiveEl = document.getElementById("servoLive");
+    const servoControlEl = document.getElementById("servoControl");
+    const servo2LiveEl = document.getElementById("servo2Live");
+    const servo2ControlEl = document.getElementById("servo2Control");
+
+    const rowStatus = document.getElementById("rowStatus");
+    const rowDistance = document.getElementById("rowDistance");
+    const rowServo = document.getElementById("rowServo");
+    const rowServo2 = document.getElementById("rowServo2");
+    const dotStatus = document.getElementById("dotStatus");
+    const dotDistance = document.getElementById("dotDistance");
+    const dotServo = document.getElementById("dotServo");
+    const dotServo2 = document.getElementById("dotServo2");
+
+    const state = {
+        servoAngle: 90,
+        servo2Angle: 90,
+        draggingServo: false,
+        draggingServo2: false,
+        servoTimer: null,
+        servo2Timer: null,
+    };
+
+    function setLight(row, dot, status) {
+        row.className = "light-row" + (status ? " " + status : "");
+        dot.className = "dot" + (status ? " " + status : "");
+    }
+
+    function updateServoVisual(angle) {
+        const clamped = Math.max(0, Math.min(300, Number(angle) || 0));
+        servoControlEl.style.setProperty("--fill", (clamped / 3) + "%");
+        servoControlEl.value = clamped;
+        servoLiveEl.textContent = clamped + "\u00b0";
+    }
+
+    function updateServo2Visual(angle) {
+        const clamped = Math.max(0, Math.min(300, Number(angle) || 0));
+        servo2ControlEl.style.setProperty("--fill", (clamped / 3) + "%");
+        servo2ControlEl.value = clamped;
+        servo2LiveEl.textContent = clamped + "\u00b0";
+    }
+
+    async function postServo() {
+        try {
+            const response = await fetch("/api/servo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ angle: state.servoAngle }),
+            });
+            if (!response.ok) throw new Error("POST /api/servo failed");
+            setLight(rowServo, dotServo, "active");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo, dotServo, "err");
+        }
+    }
+
+    function scheduleServoPost() {
+        clearTimeout(state.servoTimer);
+        state.servoTimer = setTimeout(postServo, 25);
+    }
+
+    async function postServo2() {
+        try {
+            const response = await fetch("/api/servo2", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ angle: state.servo2Angle }),
+            });
+            if (!response.ok) throw new Error("POST /api/servo2 failed");
+            setLight(rowServo2, dotServo2, "active");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo2, dotServo2, "err");
+        }
+    }
+
+    function scheduleServo2Post() {
+        clearTimeout(state.servo2Timer);
+        state.servo2Timer = setTimeout(postServo2, 25);
+    }
+
+    async function refreshStatus() {
+        try {
+            const statusRes = await fetch("/api/status");
+            if (!statusRes.ok) throw new Error("status failed");
+            const status = await statusRes.json();
+            setLight(rowStatus, dotStatus, "ok");
+
+            if (!state.draggingServo) {
+                state.servoAngle = Number(status.servo_angle);
+                if (Number.isNaN(state.servoAngle)) state.servoAngle = 90;
+                updateServoVisual(state.servoAngle);
+            }
+            if (!state.draggingServo2) {
+                state.servo2Angle = Number(status.servo2_angle);
+                if (Number.isNaN(state.servo2Angle)) state.servo2Angle = 90;
+                updateServo2Visual(state.servo2Angle);
+            }
+
+            distanceEl.textContent = Number(status.distance) || 0;
+        } catch (err) {
+            console.error(err);
+            setLight(rowStatus, dotStatus, "err");
+        }
+
+        try {
+            const distanceRes = await fetch("/api/distance");
+            if (!distanceRes.ok) throw new Error("distance failed");
+            const distance = await distanceRes.json();
+            distanceEl.textContent = Number(distance.distance) || 0;
+            setLight(rowDistance, dotDistance, "live");
+        } catch (err) {
+            console.error(err);
+            setLight(rowDistance, dotDistance, "err");
+        }
+
+        try {
+            const servoRes = await fetch("/api/servo");
+            if (!servoRes.ok) throw new Error("servo failed");
+            const servo = await servoRes.json();
+            if (!state.draggingServo) {
+                state.servoAngle = Number(servo.angle);
+                if (Number.isNaN(state.servoAngle)) state.servoAngle = 90;
+                updateServoVisual(state.servoAngle);
+            }
+            setLight(rowServo, dotServo, "ok");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo, dotServo, "err");
+        }
+
+        try {
+            const servo2Res = await fetch("/api/servo2");
+            if (!servo2Res.ok) throw new Error("servo2 failed");
+            const servo2 = await servo2Res.json();
+            if (!state.draggingServo2) {
+                state.servo2Angle = Number(servo2.angle);
+                if (Number.isNaN(state.servo2Angle)) state.servo2Angle = 90;
+                updateServo2Visual(state.servo2Angle);
+            }
+            setLight(rowServo2, dotServo2, "ok");
+        } catch (err) {
+            console.error(err);
+            setLight(rowServo2, dotServo2, "err");
+        }
+    }
+
+    servoControlEl.addEventListener("pointerdown", () => { state.draggingServo = true; });
+    servoControlEl.addEventListener("pointerup", () => {
+        state.draggingServo = false;
+        postServo();
+    });
+    servoControlEl.addEventListener("input", () => {
+        state.servoAngle = Number(servoControlEl.value) || 0;
+        updateServoVisual(state.servoAngle);
+        scheduleServoPost();
+    });
+
+    servo2ControlEl.addEventListener("pointerdown", () => { state.draggingServo2 = true; });
+    servo2ControlEl.addEventListener("pointerup", () => {
+        state.draggingServo2 = false;
+        postServo2();
+    });
+    servo2ControlEl.addEventListener("input", () => {
+        state.servo2Angle = Number(servo2ControlEl.value) || 0;
+        updateServo2Visual(state.servo2Angle);
+        scheduleServo2Post();
+    });
+
+    updateServoVisual(state.servoAngle);
+    updateServo2Visual(state.servo2Angle);
+    refreshStatus();
+    setInterval(refreshStatus, 900);
+</script>
+</body>
+</html>

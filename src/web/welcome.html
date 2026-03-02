@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Butterfly Debug</title>
+    <title>Butterfly - 选择 WiFi</title>
     <style>
         :root {
             --bg: #0f0f0f;
@@ -13,434 +13,288 @@
             --muted: #8a8a8a;
             --accent: #c9a962;
             --ok: #4ade80;
-            --live: #60a5fa;
             --err: #f87171;
         }
-
-        * {
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-            user-select: none;
-        }
-
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
             margin: 0;
             background: var(--bg);
             color: var(--text);
-            font-family: Manrope, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             min-height: 100vh;
         }
-
         .app {
-            width: 100%;
             max-width: 420px;
             margin: 0 auto;
             padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
         }
-
-        h1 {
-            margin: 0;
-            font-family: "Playfair Display", Georgia, serif;
-            font-weight: 400;
-            font-size: 28px;
-        }
-
-        .card {
+        h1 { margin: 0 0 8px; font-size: 24px; font-weight: 400; }
+        .sub { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
             background: var(--panel);
             border: 1px solid var(--border);
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .label {
-            font-size: 12px;
-            color: var(--muted);
-        }
-
-        .value {
-            font-family: "Playfair Display", Georgia, serif;
-            font-size: 28px;
-            line-height: 1;
-        }
-
-        .title {
-            font-family: "Playfair Display", Georgia, serif;
-            font-size: 18px;
-            line-height: 1.2;
-            margin: 0;
-        }
-
-        .btn-row {
-            display: flex;
-            gap: 10px;
-        }
-
-        .dir-btn {
-            flex: 1;
-            min-height: 48px;
-            border: 1px solid var(--border);
-            background: #101010;
             color: var(--text);
-            font-size: 13px;
-            border-radius: 0;
-            font-weight: 600;
-            transition: transform .06s ease, opacity .12s ease, box-shadow .12s ease;
-            touch-action: manipulation;
+            font-size: 15px;
+            cursor: pointer;
+            margin-bottom: 12px;
         }
-
-        .dir-btn:active {
-            transform: scale(0.98);
+        .btn.primary { background: var(--accent); color: #0a0a0a; border-color: var(--accent); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .wifi-list { list-style: none; padding: 0; margin: 0; }
+        .wifi-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
         }
-
-        .dir-btn.active {
+        .wifi-item:active { background: #151515; }
+        .wifi-ssid { font-weight: 500; }
+        .wifi-meta { font-size: 12px; color: var(--muted); }
+        .wifi-auth { font-size: 11px; color: var(--muted); margin-left: 8px; }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 16px;
+        }
+        .modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 360px;
+            padding: 20px;
+        }
+        .modal h2 { margin: 0 0 16px; font-size: 18px; }
+        .modal .field { margin-bottom: 14px; }
+        .modal label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+        .modal input {
+            width: 100%;
+            padding: 10px;
+            background: #0f0f0f;
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 15px;
+        }
+        .modal .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+        .modal .btn-row .btn { flex: 1; margin: 0; }
+        .msg { font-size: 14px; margin-top: 12px; padding: 10px; border-radius: 0; }
+        .msg.err { background: rgba(248,113,113,0.15); color: var(--err); }
+        .msg.ok { background: rgba(74,222,128,0.15); color: var(--ok); }
+        .success-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .success-box h2 { margin: 0 0 12px; font-size: 18px; color: var(--ok); }
+        .success-box p { margin: 8px 0; font-size: 14px; color: var(--muted); }
+        .success-box a {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 12px 20px;
             background: var(--accent);
             color: #0a0a0a;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(201, 169, 98, 0.45);
+            text-decoration: none;
+            font-weight: 600;
         }
-
-        .slider-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .slider-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .slider-live {
-            font-family: "Playfair Display", Georgia, serif;
-            font-size: 20px;
-        }
-
-        input[type="range"] {
-            width: 100%;
-            height: 34px;
-            margin: 0;
-            background: transparent;
-        }
-
-        input[type="range"]::-webkit-slider-runnable-track {
-            height: 14px;
-            background: linear-gradient(to right, var(--accent) 0 var(--fill, 0%), #1f1f1f var(--fill, 0%) 100%);
-            border-radius: 7px;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            border: 2px solid var(--accent);
-            background: #faf8f5;
-            margin-top: -5px;
-        }
-
-        .hint {
-            font-size: 10px;
-            color: #686868;
-        }
-
-        .lights {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .light-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-        }
-
-        .dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #555;
-        }
-
-        .dot.ok { background: var(--ok); }
-        .dot.live { background: var(--live); }
-        .dot.active { background: var(--accent); }
-        .dot.err { background: var(--err); }
-
-        .light-row.ok { color: var(--ok); }
-        .light-row.live { color: var(--live); }
-        .light-row.active { color: var(--accent); }
-        .light-row.err { color: var(--err); }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-<main class="app">
-    <h1>Butterfly Debug</h1>
+    <main class="app">
+        <h1>Butterfly</h1>
+        <p class="sub">选择要连接的 WiFi 网络</p>
 
-    <section class="card">
-        <div class="label">TOF Distance</div>
-        <div class="value"><span id="distance">--</span> mm</div>
-    </section>
+        <button type="button" class="btn" id="btnScan">扫描网络</button>
 
-    <section class="card">
-        <div class="label">Motor Speed</div>
-        <div class="value"><span id="speed">--</span>%</div>
-    </section>
+        <ul class="wifi-list" id="wifiList"></ul>
+        <p class="msg hidden" id="msg"></p>
 
-    <section class="card">
-        <h2 class="title">Motor Controls (Touch Optimized)</h2>
-        <div class="btn-row">
-            <button class="dir-btn" data-direction="forward">Forward</button>
-            <button class="dir-btn" data-direction="reverse">Reverse</button>
-            <button class="dir-btn" data-direction="brake">Brake</button>
+        <div class="success-box hidden" id="successBox">
+            <h2>连接成功</h2>
+            <p>请将手机连接到 WiFi「<span id="successSsid"></span>」，然后点击下方按钮打开控制台。</p>
+            <a href="#" id="successLink">打开 Dashboard</a>
         </div>
+    </main>
 
-        <div class="slider-wrap">
-            <div class="slider-head">
-                <span class="label">Speed (live update)</span>
-                <span class="slider-live" id="speedLive">0%</span>
-            </div>
-            <input id="speedControl" type="range" min="0" max="100" step="1" value="0">
-            <div class="hint">Touch tip: drag slider to update motor in real time.</div>
+    <div class="modal-overlay hidden" id="modalOverlay">
+        <div class="modal">
+            <h2 id="modalTitle">连接 WiFi</h2>
+            <form id="connectForm">
+                <input type="hidden" id="connectSsid" />
+                <input type="hidden" id="connectAuth" value="wpa2" />
+                <div class="field">
+                    <label>网络名称 (SSID)</label>
+                    <input type="text" id="connectSsidDisplay" readonly />
+                </div>
+                <div class="field" id="fieldPassword">
+                    <label>密码</label>
+                    <input type="password" id="connectPassword" placeholder="无密码请留空" autocomplete="off" />
+                </div>
+                <div class="field hidden" id="fieldUsername">
+                    <label>用户名（企业网络）</label>
+                    <input type="text" id="connectUsername" placeholder="选填" autocomplete="off" />
+                </div>
+                <div class="msg hidden" id="connectMsg"></div>
+                <div class="btn-row">
+                    <button type="button" class="btn" id="btnCancel">取消</button>
+                    <button type="submit" class="btn primary" id="btnConnect">连接</button>
+                </div>
+            </form>
         </div>
-    </section>
+    </div>
 
-    <section class="card">
-        <h2 class="title">Servo Angle (DS-S006L)</h2>
-        <div class="slider-wrap">
-            <div class="slider-head">
-                <span class="label">Angle (live update)</span>
-                <span class="slider-live" id="servoLive">90°</span>
-            </div>
-            <input id="servoControl" type="range" min="0" max="300" step="1" value="90">
-            <div class="hint">Range: 0° - 300°. Connected on GPIO3 (D1).</div>
-        </div>
-    </section>
+    <script>
+        const wifiList = document.getElementById("wifiList");
+        const btnScan = document.getElementById("btnScan");
+        const msg = document.getElementById("msg");
+        const successBox = document.getElementById("successBox");
+        const successSsid = document.getElementById("successSsid");
+        const successLink = document.getElementById("successLink");
+        const modalOverlay = document.getElementById("modalOverlay");
+        const modalTitle = document.getElementById("modalTitle");
+        const connectForm = document.getElementById("connectForm");
+        const connectSsid = document.getElementById("connectSsid");
+        const connectSsidDisplay = document.getElementById("connectSsidDisplay");
+        const connectAuth = document.getElementById("connectAuth");
+        const connectPassword = document.getElementById("connectPassword");
+        const connectUsername = document.getElementById("connectUsername");
+        const fieldPassword = document.getElementById("fieldPassword");
+        const fieldUsername = document.getElementById("fieldUsername");
+        const connectMsg = document.getElementById("connectMsg");
+        const btnCancel = document.getElementById("btnCancel");
+        const btnConnect = document.getElementById("btnConnect");
 
-    <section class="card">
-        <h2 class="title">API Status Lights</h2>
-        <div class="lights">
-            <div class="light-row" id="rowStatus"><span class="dot" id="dotStatus"></span><span>/api/status</span></div>
-            <div class="light-row" id="rowDistance"><span class="dot" id="dotDistance"></span><span>/api/distance</span></div>
-            <div class="light-row" id="rowMotor"><span class="dot" id="dotMotor"></span><span>/api/motor</span></div>
-            <div class="light-row" id="rowServo"><span class="dot" id="dotServo"></span><span>/api/servo</span></div>
-        </div>
-    </section>
-</main>
-
-<script>
-    const distanceEl = document.getElementById("distance");
-    const speedEl = document.getElementById("speed");
-    const speedLiveEl = document.getElementById("speedLive");
-    const speedControlEl = document.getElementById("speedControl");
-    const servoLiveEl = document.getElementById("servoLive");
-    const servoControlEl = document.getElementById("servoControl");
-    const dirButtons = Array.from(document.querySelectorAll(".dir-btn"));
-
-    const rowStatus = document.getElementById("rowStatus");
-    const rowDistance = document.getElementById("rowDistance");
-    const rowMotor = document.getElementById("rowMotor");
-    const rowServo = document.getElementById("rowServo");
-    const dotStatus = document.getElementById("dotStatus");
-    const dotDistance = document.getElementById("dotDistance");
-    const dotMotor = document.getElementById("dotMotor");
-    const dotServo = document.getElementById("dotServo");
-
-    const state = {
-        speed: 0,
-        direction: "forward",
-        servoAngle: 90,
-        dragging: false,
-        draggingServo: false,
-        sendTimer: null,
-        servoTimer: null,
-    };
-
-    function setLight(row, dot, status) {
-        row.className = "light-row" + (status ? " " + status : "");
-        dot.className = "dot" + (status ? " " + status : "");
-    }
-
-    function setDirection(direction) {
-        state.direction = direction;
-        dirButtons.forEach((btn) => {
-            btn.classList.toggle("active", btn.dataset.direction === direction);
-        });
-    }
-
-    function updateSliderVisual(speed) {
-        const clamped = Math.max(0, Math.min(100, Number(speed) || 0));
-        speedControlEl.style.setProperty("--fill", clamped + "%");
-        speedControlEl.value = clamped;
-        speedLiveEl.textContent = clamped + "%";
-        speedEl.textContent = clamped;
-    }
-
-    function updateServoVisual(angle) {
-        const clamped = Math.max(0, Math.min(300, Number(angle) || 0));
-        servoControlEl.style.setProperty("--fill", (clamped / 3) + "%");
-        servoControlEl.value = clamped;
-        servoLiveEl.textContent = clamped + "\u00b0";
-    }
-
-    async function postMotor() {
-        try {
-            const response = await fetch("/api/motor", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ speed: state.speed, direction: state.direction }),
-            });
-
-            if (!response.ok) {
-                throw new Error("POST /api/motor failed");
-            }
-
-            if (state.speed > 0 && state.direction !== "brake") {
-                setLight(rowMotor, dotMotor, "active");
-            } else {
-                setLight(rowMotor, dotMotor, "ok");
-            }
-        } catch (err) {
-            console.error(err);
-            setLight(rowMotor, dotMotor, "err");
+        function showMsg(text, isErr) {
+            msg.textContent = text;
+            msg.className = "msg " + (isErr ? "err" : "ok");
+            msg.classList.remove("hidden");
         }
-    }
-
-    function scheduleMotorPost() {
-        clearTimeout(state.sendTimer);
-        state.sendTimer = setTimeout(postMotor, 90);
-    }
-
-    async function postServo() {
-        try {
-            const response = await fetch("/api/servo", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ angle: state.servoAngle }),
-            });
-
-            if (!response.ok) {
-                throw new Error("POST /api/servo failed");
-            }
-
-            setLight(rowServo, dotServo, "active");
-        } catch (err) {
-            console.error(err);
-            setLight(rowServo, dotServo, "err");
+        function hideMsg() {
+            msg.classList.add("hidden");
         }
-    }
 
-    function scheduleServoPost() {
-        clearTimeout(state.servoTimer);
-        state.servoTimer = setTimeout(postServo, 90);
-    }
-
-    async function refreshStatus() {
-        try {
-            const statusRes = await fetch("/api/status");
-            if (!statusRes.ok) throw new Error("status failed");
-            const status = await statusRes.json();
-            setLight(rowStatus, dotStatus, "ok");
-
-            if (!state.dragging) {
-                state.speed = Number(status.speed) || 0;
-                state.direction = status.direction || state.direction;
-                updateSliderVisual(state.speed);
-                setDirection(state.direction);
-            }
-
-            if (!state.draggingServo) {
-                state.servoAngle = Number(status.servo_angle);
-                if (Number.isNaN(state.servoAngle)) {
-                    state.servoAngle = 90;
+        async function scan() {
+            btnScan.disabled = true;
+            wifiList.innerHTML = "";
+            hideMsg();
+            try {
+                const res = await fetch("/api/wifi/scan");
+                const data = await res.json();
+                if (!data.networks || !data.networks.length) {
+                    showMsg("未发现网络，请重试", true);
+                    return;
                 }
-                updateServoVisual(state.servoAngle);
+                data.networks.forEach(function(ap) {
+                    const li = document.createElement("li");
+                    li.className = "wifi-item";
+                    li.dataset.ssid = ap.ssid;
+                    li.dataset.auth = ap.auth || "open";
+                    li.innerHTML = "<span><span class=\"wifi-ssid\">" + escapeHtml(ap.ssid) + "</span><span class=\"wifi-auth\">" + escapeHtml(ap.auth) + "</span></span><span class=\"wifi-meta\">" + ap.rssi + " dBm</span>";
+                    li.addEventListener("click", function() { openConnectModal(ap.ssid, ap.auth); });
+                    wifiList.appendChild(li);
+                });
+            } catch (e) {
+                showMsg("扫描失败: " + e.message, true);
             }
-
-            distanceEl.textContent = Number(status.distance) || 0;
-        } catch (err) {
-            console.error(err);
-            setLight(rowStatus, dotStatus, "err");
+            btnScan.disabled = false;
         }
 
-        try {
-            const distanceRes = await fetch("/api/distance");
-            if (!distanceRes.ok) throw new Error("distance failed");
-            const distance = await distanceRes.json();
-            distanceEl.textContent = Number(distance.distance) || 0;
-            setLight(rowDistance, dotDistance, "live");
-        } catch (err) {
-            console.error(err);
-            setLight(rowDistance, dotDistance, "err");
+        function escapeHtml(s) {
+            const div = document.createElement("div");
+            div.textContent = s;
+            return div.innerHTML;
         }
 
-        try {
-            const servoRes = await fetch("/api/servo");
-            if (!servoRes.ok) throw new Error("servo failed");
-            const servo = await servoRes.json();
-            if (!state.draggingServo) {
-                state.servoAngle = Number(servo.angle);
-                if (Number.isNaN(state.servoAngle)) {
-                    state.servoAngle = 90;
+        function openConnectModal(ssid, auth) {
+            connectSsid.value = ssid;
+            connectSsidDisplay.value = ssid;
+            connectAuth.value = auth || "wpa2";
+            connectPassword.value = "";
+            connectUsername.value = "";
+            connectMsg.classList.add("hidden");
+            fieldPassword.classList.remove("hidden");
+            fieldUsername.classList.add("hidden");
+            if (auth === "open" || auth === "none") {
+                fieldPassword.classList.add("hidden");
+            } else if (auth === "wpa2_enterprise" || auth === "enterprise") {
+                fieldUsername.classList.remove("hidden");
+            }
+            modalOverlay.classList.remove("hidden");
+        }
+
+        function closeModal() {
+            modalOverlay.classList.add("hidden");
+        }
+
+        btnCancel.addEventListener("click", closeModal);
+
+        connectForm.addEventListener("submit", async function(e) {
+            e.preventDefault();
+            connectMsg.classList.add("hidden");
+            const ssid = connectSsid.value.trim();
+            if (!ssid) return;
+            const auth = connectAuth.value;
+            const password = connectPassword.value.trim() || null;
+            const username = connectUsername.value.trim() || null;
+            btnConnect.disabled = true;
+            try {
+                const body = JSON.stringify({
+                    ssid: ssid,
+                    password: password,
+                    username: username,
+                    auth: auth
+                });
+                const res = await fetch("/api/wifi/connect", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: body
+                });
+                const data = await res.json();
+                if (data.ok && data.ip) {
+                    closeModal();
+                    successSsid.textContent = data.ssid || ssid;
+                    successLink.href = "http://" + data.ip + "/dashboard.html";
+                    successBox.classList.remove("hidden");
+                    try {
+                        await fetch("/api/wifi/stop_ap", { method: "POST" });
+                    } catch (_) {}
+                } else {
+                    connectMsg.textContent = data.error || "连接失败";
+                    connectMsg.classList.remove("hidden");
+                    connectMsg.classList.add("err");
                 }
-                updateServoVisual(state.servoAngle);
+            } catch (err) {
+                connectMsg.textContent = "请求失败: " + err.message;
+                connectMsg.classList.remove("hidden");
+                connectMsg.classList.add("err");
             }
-            setLight(rowServo, dotServo, "ok");
-        } catch (err) {
-            console.error(err);
-            setLight(rowServo, dotServo, "err");
-        }
-    }
-
-    dirButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-            setDirection(btn.dataset.direction);
-            postMotor();
+            btnConnect.disabled = false;
         });
-    });
 
-    speedControlEl.addEventListener("pointerdown", () => {
-        state.dragging = true;
-    });
+        btnScan.addEventListener("click", scan);
 
-    speedControlEl.addEventListener("pointerup", () => {
-        state.dragging = false;
-        postMotor();
-    });
-
-    speedControlEl.addEventListener("input", () => {
-        state.speed = Number(speedControlEl.value) || 0;
-        updateSliderVisual(state.speed);
-        scheduleMotorPost();
-    });
-
-    servoControlEl.addEventListener("pointerdown", () => {
-        state.draggingServo = true;
-    });
-
-    servoControlEl.addEventListener("pointerup", () => {
-        state.draggingServo = false;
-        postServo();
-    });
-
-    servoControlEl.addEventListener("input", () => {
-        state.servoAngle = Number(servoControlEl.value) || 0;
-        updateServoVisual(state.servoAngle);
-        scheduleServoPost();
-    });
-
-    setDirection(state.direction);
-    updateSliderVisual(state.speed);
-    updateServoVisual(state.servoAngle);
-    refreshStatus();
-    setInterval(refreshStatus, 900);
-</script>
+        (function checkAlreadyConnected() {
+            fetch("/api/wifi/status")
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.connected && data.ip) {
+                        successSsid.textContent = data.ssid || "";
+                        successLink.href = "http://" + data.ip + "/dashboard.html";
+                        successBox.classList.remove("hidden");
+                    }
+                })
+                .catch(function() {});
+        })();
+    </script>
 </body>
 </html>
