@@ -2,6 +2,7 @@ use esp_idf_svc::http::server::{Configuration, EspHttpServer};
 use esp_idf_svc::io::{EspIOError, Write};
 use log::{info, warn};
 use std::net::Ipv4Addr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -33,6 +34,7 @@ impl ButterflyWeb {
         ap_ip: Ipv4Addr,
         hw_status: Option<HardwareStatus>,
         wifi_cmd_tx: Option<WifiCmdTx>,
+        test_mode: Option<Arc<AtomicBool>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Starting HTTP server...");
 
@@ -321,6 +323,33 @@ impl ButterflyWeb {
             )?;
 
             info!("Hardware API endpoints registered");
+        }
+
+        // Test mode (distance-triggered servo) on/off
+        if let Some(flag) = test_mode {
+            let test_flag = flag.clone();
+            server.fn_handler(
+                "/api/test-mode",
+                esp_idf_svc::http::Method::Post,
+                move |mut request| {
+                    let mut body = [0u8; 64];
+                    let mut size = 0usize;
+                    while size < body.len() {
+                        let read = request.read(&mut body[size..])?;
+                        if read == 0 {
+                            break;
+                        }
+                        size += read;
+                    }
+                    let payload = std::str::from_utf8(&body[..size]).unwrap_or("");
+                    let on = payload.contains("\"on\":true") || payload.contains("\"on\": true");
+                    test_flag.store(on, Ordering::Relaxed);
+                    let json = format!(r#"{{"ok":true,"on":{}}}"#, on);
+                    let mut response = request.into_ok_response()?;
+                    response.write_all(json.as_bytes())?;
+                    Ok::<(), EspIOError>(())
+                },
+            )?;
         }
 
         // Favicon handler to prevent 404 errors

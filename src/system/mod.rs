@@ -23,6 +23,7 @@ use crate::{
     web::{HardwareStatus, WebService},
     wifi::{WifiCommand, WifiResponse, WifiService},
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -241,15 +242,88 @@ impl ButterflySystem {
             });
 
             let hw_status = HardwareStatus {
-                distance,
+                distance: distance.clone(),
                 servo_angle,
-                servo_set,
+                servo_set: servo_set.clone(),
                 servo2_angle,
-                servo2_set,
+                servo2_set: servo2_set.clone(),
             };
 
+            // Dedicated thread: distance < 110mm → servo1=45°, servo2 120→40→120; cycle 2s at 110mm, 1s at 60mm (linear)
+            let test_mode = Arc::new(AtomicBool::new(false));
+            let distance_thd = distance.clone();
+            let servo_set_thd = servo_set.clone();
+            let servo2_set_thd = servo2_set.clone();
+            let test_mode_thd = Arc::clone(&test_mode);
+            std::thread::Builder::new()
+                .name("test-mode".into())
+                .spawn(move || {
+                    // --- Test mode constants (all in one place) ---
+                    const TICK_MS: u64 = 40;
+                    const THRESHOLD_START_MM: u16 = 110;   // trigger when distance < this
+                    const THRESHOLD_FAST_MM: u16 = 60;    // at/below this distance use fastest period
+                    const PERIOD_SLOW_MS: u64 = 2000;     // cycle period at THRESHOLD_START_MM
+                    const PERIOD_FAST_MS: u64 = 1000;    // cycle period at THRESHOLD_FAST_MM
+                    const MM_RANGE_LINEAR: u16 = 50;      // THRESHOLD_START_MM - THRESHOLD_FAST_MM
+                    const SERVO1_ANGLE_TRIGGERED: u16 = 45;
+                    const SERVO1_ANGLE_IDLE: u16 = 90;
+                    const SERVO2_ANGLE_IDLE: u16 = 120;
+                    const SERVO2_ANGLE_MIN: u16 = 40;
+                    const SERVO2_ANGLE_MAX: u16 = 120;
+                    const SERVO2_ANGLE_SPAN: u16 = 80;    // SERVO2_ANGLE_MAX - SERVO2_ANGLE_MIN
+                    const PHASE_FULL_CYCLE: f32 = 2.0;   // phase 0..1: 120→40, 1..2: 40→120
+
+                    // Continuous phase [0, 2): no reset when period changes, so speed changes smoothly
+                    let mut phase: f32 = 0.0;
+                    let mut was_triggered = false;
+
+                    loop {
+                        std::thread::sleep(Duration::from_millis(TICK_MS));
+                        if !test_mode_thd.load(Ordering::Relaxed) {
+                            was_triggered = false;
+                            continue;
+                        }
+                        let d = (distance_thd)();
+                        if d < THRESHOLD_START_MM {
+                            let period_ms = if d <= THRESHOLD_FAST_MM {
+                                PERIOD_FAST_MS
+                            } else {
+                                PERIOD_SLOW_MS
+                                    - (THRESHOLD_START_MM - d) as u64
+                                        * (PERIOD_SLOW_MS - PERIOD_FAST_MS)
+                                        / (MM_RANGE_LINEAR as u64)
+                            };
+                            // Advance phase by this tick; when period shortens we just go faster
+                            let advance =
+                                (TICK_MS as f32 / period_ms as f32) * PHASE_FULL_CYCLE;
+                            phase += advance;
+                            if phase >= PHASE_FULL_CYCLE {
+                                phase -= PHASE_FULL_CYCLE;
+                            }
+                            // phase 0..1 => 120→40, phase 1..2 => 40→120
+                            let angle2 = if phase < 1.0 {
+                                SERVO2_ANGLE_MAX
+                                    - (SERVO2_ANGLE_SPAN as f32 * phase) as u16
+                            } else {
+                                SERVO2_ANGLE_MIN
+                                    + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
+                            };
+                            let _ = (servo_set_thd)(SERVO1_ANGLE_TRIGGERED);
+                            let _ = (servo2_set_thd)(angle2);
+                            was_triggered = true;
+                        } else {
+                            if was_triggered {
+                                phase = 0.0; // next re-entry starts at 120°
+                            }
+                            was_triggered = false;
+                            let _ = (servo_set_thd)(SERVO1_ANGLE_IDLE);
+                            let _ = (servo2_set_thd)(SERVO2_ANGLE_IDLE);
+                        }
+                    }
+                })?;
+            self.web.set_test_mode(test_mode);
             self.web.set_hardware_status(hw_status);
-            info!("Hardware status configured for web interface");
+            info!("Hardware status and test-mode thread configured");
         }
 
         // Start Web server - serves the captive portal

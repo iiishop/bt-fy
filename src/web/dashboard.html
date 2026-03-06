@@ -46,12 +46,48 @@
             cursor: pointer;
         }
         .btn:hover { opacity: 0.95; }
+        .btn.secondary {
+            background: transparent;
+            color: var(--accent);
+            border: 2px solid var(--accent);
+            margin-top: 10px;
+        }
+        .btn.secondary.active {
+            background: var(--accent);
+            color: #0a0a0a;
+        }
     </style>
 </head>
 <body>
     <main class="card">
         <h1>Butterfly Dashboard</h1>
+        <button type="button" class="btn secondary" id="testBtn">距离测试</button>
         <a href="/debug.html" class="btn">Debug</a>
     </main>
+    <script>
+        (function () {
+            const testBtn = document.getElementById("testBtn");
+            let testModeOn = false;
+
+            function setTestMode(on) {
+                fetch("/api/test-mode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ on: on }),
+                })
+                    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+                    .then(function () {
+                        testModeOn = on;
+                        testBtn.classList.toggle("active", on);
+                        testBtn.textContent = on ? "距离测试 (开)" : "距离测试";
+                    })
+                    .catch(function () {});
+            }
+
+            testBtn.addEventListener("click", function () {
+                setTestMode(!testModeOn);
+            });
+        })();
+    </script>
 </body>
 </html>

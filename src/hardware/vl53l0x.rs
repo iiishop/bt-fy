@@ -60,18 +60,15 @@ impl VL53L0XService {
                     // Wait for measurement to be ready and read it (value is in mm)
                     match sensor.read_range_continuous_millimeters_blocking() {
                         Ok(raw_mm) => {
-                            // VL53L0X uses 8190/8191 as "no object" / out-of-range; treat as 0
-                            let valid_mm = if raw_mm >= 8190 { 0u16 } else { raw_mm };
+                            // VL53L0X uses 8190/8191 as "no object" / out-of-range; show 9999
+                            let valid_mm = if raw_mm >= 8190 { 9999u16 } else { raw_mm };
                             if let Ok(mut dist) = distance_clone.lock() {
                                 *dist = valid_mm;
                             }
                         }
                         Err(e) => {
                             error!("Failed to read VL53L0X: {:?}", e);
-                            // Clear stale value so UI doesn't show a stuck reading
-                            if let Ok(mut dist) = distance_clone.lock() {
-                                *dist = 0;
-                            }
+                            // Keep last value on error so we don't force 0 when I2C glitches
                             thread::sleep(Duration::from_millis(50));
                         }
                     }
