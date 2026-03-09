@@ -50,10 +50,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final status = await DeviceDiscoveryService.getPairStatus(_device.ipAddress);
     if (!mounted) return;
     final pairedWith = (status['paired_with'] as String? ?? '').trim();
+    final triggeredCount = (status['triggered_count'] as num?)?.toInt() ?? _device.triggeredByPairCount;
     if (pairedWith.isNotEmpty) {
-      if (_device.pairedWithDeviceId != pairedWith) {
-        await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: pairedWith));
-        setState(() => _device = _device.copyWith(pairedWithDeviceId: pairedWith));
+      if (_device.pairedWithDeviceId != pairedWith || _device.triggeredByPairCount != triggeredCount) {
+        final next = _device.copyWith(pairedWithDeviceId: pairedWith, triggeredByPairCount: triggeredCount);
+        await _deviceStorage.save(next);
+        setState(() => _device = next);
       }
       final peer = await _deviceStorage.getByDeviceId(pairedWith);
       if (peer == null) {
@@ -70,8 +72,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       if (_device.pairedWithDeviceId != null) {
         final oldPeer = _device.pairedWithDeviceId!;
         await _deviceStorage.delete(oldPeer);
-        await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: null));
-        setState(() => _device = _device.copyWith(pairedWithDeviceId: null));
+        await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: null, triggeredByPairCount: 0));
+        setState(() => _device = _device.copyWith(pairedWithDeviceId: null, triggeredByPairCount: 0));
       }
     }
     if (!mounted) return;
@@ -198,6 +200,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 Clipboard.setData(ClipboardData(text: d.pairedWithDeviceId!));
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('copied_to_clipboard'))));
               },
+            ),
+            ListTile(
+              title: Text(l10n.t('triggered_by_pair_count')),
+              subtitle: Text(l10n.t('triggered_by_pair_count_value', [d.triggeredByPairCount.toString()])),
             ),
             Padding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
@@ -357,7 +363,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     await DeviceDiscoveryService.unpair(_device.ipAddress, peerIp: peer?.ipAddress);
     if (!mounted) return;
     await _deviceStorage.delete(peerId);
-    final updated = _device.copyWith(pairedWithDeviceId: null);
+    final updated = _device.copyWith(pairedWithDeviceId: null, triggeredByPairCount: 0);
     await _deviceStorage.save(updated);
     setState(() {
       _device = updated;

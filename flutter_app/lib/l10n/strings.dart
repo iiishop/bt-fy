@@ -58,6 +58,8 @@ class AppStrings {
     'unpair_title': 'Unpair',
     'unpair_confirm': 'Unpair with this device? The other side will be notified.',
     'unpair': 'Unpair',
+    'triggered_by_pair_count': 'Triggered by pair',
+    'triggered_by_pair_count_value': '%1 time(s)',
     'bound_elsewhere': 'Bound elsewhere',
     // Add device
     'connect_ap_title': 'Connect to device hotspot',
@@ -152,6 +154,8 @@ class AppStrings {
     'unpair_title': '解除配对',
     'unpair_confirm': '确定与此设备解除配对？对方将收到通知。',
     'unpair': '解除配对',
+    'triggered_by_pair_count': '被配对设备触发',
+    'triggered_by_pair_count_value': '%1 次',
     'bound_elsewhere': '已被其他手机绑定',
     'connect_ap_title': '连接设备热点',
     'connect_ap_message': '即将连接到此设备热点「%1」。\n\n确认后将由系统连接该热点，连接成功后会自动获取设备信息并进入下一步配网。',

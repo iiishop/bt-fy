@@ -4,4 +4,4 @@ mod ap_tcp;
 mod sta_services;
 
 pub use ap_tcp::{start_ap_tcp_listener, PendingBindToken, PendingConfigDone};
-pub use sta_services::{spawn_sta_services_on_connect, BindingState, PairState, WifiListStore};
+pub use sta_services::{spawn_sta_services_on_connect, BindingState, PairState, SyncRunning, TriggerState, WifiListStore};
