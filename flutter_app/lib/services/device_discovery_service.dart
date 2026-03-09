@@ -26,7 +26,8 @@ class DeviceDiscoveryService {
         if (event != RawSocketEvent.read) return;
         final dgram = _udpSocket!.receive();
         if (dgram == null) return;
-        _handleBroadcast(dgram.data);
+        final fromIp = dgram.address.address;
+        _handleBroadcast(dgram.data, fromIp);
       });
       return true;
     } on SocketException catch (_) {
@@ -34,7 +35,7 @@ class DeviceDiscoveryService {
     }
   }
 
-  void _handleBroadcast(List<int> data) {
+  void _handleBroadcast(List<int> data, String fromIp) {
     try {
       final s = utf8.decode(data);
       final map = jsonDecode(s) as Map<String, dynamic>?;
@@ -43,16 +44,17 @@ class DeviceDiscoveryService {
       final id = map['id'] as String?;
       if (id == null) return;
       final ip = map['ip'] as String? ?? '';
+      final effectiveIp = ip.isNotEmpty && ip != '0.0.0.0' ? ip : fromIp;
       if (evt == 'binding') {
         final bindToken = map['bindToken'] as String?;
         if (bindToken != null && bindToken.isNotEmpty) {
-          onBindingSeen?.call(id, ip, bindToken);
+          onBindingSeen?.call(id, effectiveIp, bindToken);
         }
       }
       final device = Device(
         deviceId: id,
         name: id,
-        ipAddress: ip,
+        ipAddress: effectiveIp,
         isOnline: true,
         lastSeen: DateTime.now(),
         isBound: evt == 'heartbeat',
@@ -113,4 +115,31 @@ class DeviceDiscoveryService {
   static Future<Map<String, dynamic>> unbind(String host, {int port = Protocol.staTcpPort}) {
     return sendCommand(host, port, {'cmd': 'unbind'});
   }
+
+  /// 发起配对请求（本机 ESP 会向 targetIp 的 ESP 发送 pair_request）
+  static Future<Map<String, dynamic>> pairRequest(
+    String myDeviceHost,
+    String targetDeviceId,
+    String targetIp, {
+    int port = Protocol.staTcpPort,
+  }) {
+    return sendCommand(myDeviceHost, port, {
+      'cmd': 'pair_request',
+      'target_ip': targetIp,
+      'target_device_id': targetDeviceId,
+    });
+  }
+
+  /// 获取待处理的配对请求（来自其他 ESP）
+  static Future<Map<String, dynamic>> getPendingPairRequests(String host, {int port = Protocol.staTcpPort}) {
+    return sendCommand(host, port, {'cmd': 'get_pending_pair_requests'});
+  }
+
+  /// 接受配对（向对方 ESP 发送 pair_accepted）
+  static Future<Map<String, dynamic>> acceptPair(String host, String fromDeviceId, {int port = Protocol.staTcpPort}) {
+    return sendCommand(host, port, {'cmd': 'accept_pair', 'from_device_id': fromDeviceId});
+  }
+
+  // 非同一局域网配对预留：未来可通过 P2P / Tailscale 等解析 target_device_id 得到可达地址后再调用 pairRequest。
+  // static Future<Map<String, dynamic>> pairRequestRemote(String myDeviceHost, String targetDeviceId) => ...
 }

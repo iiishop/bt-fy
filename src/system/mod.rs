@@ -21,7 +21,7 @@ use std::sync::Arc;
 use crate::{
     dns::DnsService,
     hardware::{ServoService, VL53L0XService},
-    protocol::{spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PendingBindToken, PendingConfigDone},
+    protocol::{spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PairState, PendingBindToken, PendingConfigDone},
     system::config::{AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN},
     web::{HardwareStatus, WebService},
     wifi::{WifiCommand, WifiResponse, WifiService},
@@ -262,8 +262,9 @@ impl ButterflySystem {
                 servo2_set: servo2_set.clone(),
             };
 
-            // Dedicated thread: distance < 110mm → servo1=45°, servo2 120→40→120; cycle 2s at 110mm, 1s at 60mm (linear)
-            let test_mode = Arc::new(AtomicBool::new(false));
+            // 靠近 ToF 时自动触发：距离 < 110mm 启动；舵机0 做 40°↔120° 循环（越近越快），舵机1 固定 45°
+            // test_mode 可由 Web /api/test-mode 关闭，默认开启
+            let test_mode = Arc::new(AtomicBool::new(true));
             let distance_thd = distance.clone();
             let servo_set_thd = servo_set.clone();
             let servo2_set_thd = servo2_set.clone();
@@ -273,8 +274,9 @@ impl ButterflySystem {
                 .spawn(move || {
                     // --- Test mode constants (all in one place) ---
                     const TICK_MS: u64 = 40;
-                    const THRESHOLD_START_MM: u16 = 110;   // trigger when distance < this
-                    const THRESHOLD_FAST_MM: u16 = 60;    // at/below this distance use fastest period
+                    const THRESHOLD_MIN_MM: u16 = 20;     // ignore 0/invalid (sensor disconnected)
+                    const THRESHOLD_START_MM: u16 = 110;  // trigger when distance < this
+                    const THRESHOLD_FAST_MM: u16 = 60;   // at/below this distance use fastest period
                     const PERIOD_SLOW_MS: u64 = 2000;     // cycle period at THRESHOLD_START_MM
                     const PERIOD_FAST_MS: u64 = 1000;    // cycle period at THRESHOLD_FAST_MM
                     const MM_RANGE_LINEAR: u16 = 50;      // THRESHOLD_START_MM - THRESHOLD_FAST_MM
@@ -289,15 +291,19 @@ impl ButterflySystem {
                     // Continuous phase [0, 2): no reset when period changes, so speed changes smoothly
                     let mut phase: f32 = 0.0;
                     let mut was_triggered = false;
+                    let mut idle_applied = false; // only write idle angles once, avoid spamming
 
                     loop {
                         std::thread::sleep(Duration::from_millis(TICK_MS));
                         if !test_mode_thd.load(Ordering::Relaxed) {
                             was_triggered = false;
+                            idle_applied = false;
                             continue;
                         }
                         let d = (distance_thd)();
-                        if d < THRESHOLD_START_MM {
+                        // Only trigger when sensor reports valid near range (ignore 0 = disconnected)
+                        if d >= THRESHOLD_MIN_MM && d < THRESHOLD_START_MM {
+                            idle_applied = false;
                             let period_ms = if d <= THRESHOLD_FAST_MM {
                                 PERIOD_FAST_MS
                             } else {
@@ -313,24 +319,28 @@ impl ButterflySystem {
                             if phase >= PHASE_FULL_CYCLE {
                                 phase -= PHASE_FULL_CYCLE;
                             }
-                            // phase 0..1 => 120→40, phase 1..2 => 40→120
-                            let angle2 = if phase < 1.0 {
+                            // phase 0..1 => 120→40, phase 1..2 => 40→120（舵机0 做 40°↔120° 循环）
+                            let angle0 = if phase < 1.0 {
                                 SERVO2_ANGLE_MAX
                                     - (SERVO2_ANGLE_SPAN as f32 * phase) as u16
                             } else {
                                 SERVO2_ANGLE_MIN
                                     + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
                             };
-                            let _ = (servo_set_thd)(SERVO1_ANGLE_TRIGGERED);
-                            let _ = (servo2_set_thd)(angle2);
+                            let _ = (servo_set_thd)(angle0);           // 舵机0: 40°↔120° 循环，越近越快
+                            let _ = (servo2_set_thd)(SERVO1_ANGLE_TRIGGERED); // 舵机1: 45°
                             was_triggered = true;
                         } else {
                             if was_triggered {
                                 phase = 0.0; // next re-entry starts at 120°
                             }
                             was_triggered = false;
-                            let _ = (servo_set_thd)(SERVO1_ANGLE_IDLE);
-                            let _ = (servo2_set_thd)(SERVO2_ANGLE_IDLE);
+                            // Idle: set 120° / 90° only once when entering idle, then stop writing
+                            if !idle_applied {
+                                let _ = (servo_set_thd)(SERVO2_ANGLE_IDLE);  // 舵机0 回 120°
+                                let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE); // 舵机1 回 90°
+                                idle_applied = true;
+                            }
                         }
                     }
                 })?;
@@ -345,6 +355,7 @@ impl ButterflySystem {
 
         // AP 模式配网 TCP 1234（identify / config）；手机发完 config 可离开热点，STA 连上后在 WiFi 里持续发 binding，手机回信后完成绑定
         let binding_state: BindingState = Arc::new(Mutex::new((false, None)));
+        let pair_state: PairState = Arc::new(Mutex::new((vec![], None)));
         let (sta_start_tx, sta_start_rx) = mpsc::channel::<(String, String, Option<String>)>();
         let pending_config_done: PendingConfigDone = Arc::new(Mutex::new(None));
         let pending_bind_token: PendingBindToken = Arc::new(Mutex::new(None));
@@ -365,6 +376,7 @@ impl ButterflySystem {
         let servo_for_sta = self.servo.clone();
         let servo2_for_sta = self.servo2.clone();
         let binding_state_clone = Arc::clone(&binding_state);
+        let pair_state_clone = Arc::clone(&pair_state);
         std::thread::Builder::new()
             .name("sta-starter".into())
             .spawn(move || {
@@ -380,6 +392,7 @@ impl ButterflySystem {
                         servo_for_sta.clone(),
                         servo2_for_sta.clone(),
                         Arc::clone(&binding_state_clone),
+                        Arc::clone(&pair_state_clone),
                     );
                 }
             })?;

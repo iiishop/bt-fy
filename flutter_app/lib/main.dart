@@ -2,9 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 
+import 'l10n/app_localizations.dart';
 import 'screens/home_screen.dart';
 
-/// 全局 Logger。输出到 debugPrint，便于在 `flutter run` 终端看到。
 final appLog = Logger(
   printer: PrettyPrinter(methodCount: 0, lineLength: 80),
   level: kReleaseMode ? Level.off : Level.debug,
@@ -28,23 +28,43 @@ class _DebugPrintOutput extends LogOutput {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('智能设备 App 启动');
-  appLog.i('Logger 已就绪');
+  debugPrint('Smart Devices app starting');
+  appLog.i('Logger ready');
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  String _locale = 'en';
+
+  void _setLocale(String locale) {
+    setState(() => _locale = locale);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '智能设备',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
+    return AppLocalizations(
+      locale: _locale,
+      setLocale: _setLocale,
+      child: Builder(
+        builder: (context) {
+          final l10n = AppLocalizations.of(context);
+          return MaterialApp(
+            title: l10n.t('app_title'),
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+              useMaterial3: true,
+            ),
+            home: const HomeScreen(),
+          );
+        },
       ),
-      home: const HomeScreen(),
     );
   }
 }

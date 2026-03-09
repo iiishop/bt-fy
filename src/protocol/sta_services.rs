@@ -1,8 +1,8 @@
-//! STA 模式：UDP 广播（hello/heartbeat）+ TCP 控制服务（设计 5.2）
+//! STA 模式：UDP 广播（hello/heartbeat）+ TCP 控制服务（设计 5.2）+ 局域网配对
 
 use log::{info, warn};
-use std::io::Read;
-use std::net::{SocketAddrV4, TcpListener, UdpSocket};
+use std::io::{Read, Write};
+use std::net::{TcpStream, SocketAddrV4, TcpListener, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -13,8 +13,10 @@ use crate::system::config::{STA_TCP_PORT, STA_UDP_PORT};
 /// 绑定状态：是否已绑定、绑定的手机 ID
 pub type BindingState = Arc<Mutex<(bool, Option<String>)>>;
 
+/// 配对状态：待处理列表 (from_device_id, from_ip)、已配对设备 ID
+pub type PairState = Arc<Mutex<(Vec<(String, String)>, Option<String>)>>;
+
 /// 收到配网成功（STA 已连接）时，启动 UDP 广播与 TCP 控制（各占一线程）
-/// bind_token: 配网时手机传来的 token，有则持续发 evt=binding 直至收到 bind 回信；无则发 heartbeat
 pub fn spawn_sta_services_on_connect(
     device_id: String,
     sta_ip: String,
@@ -22,6 +24,7 @@ pub fn spawn_sta_services_on_connect(
     servo: Option<Arc<ServoService>>,
     servo2: Option<Arc<ServoService>>,
     binding_state: BindingState,
+    pair_state: PairState,
 ) {
     let did = device_id.clone();
     let ip = sta_ip.clone();
@@ -32,7 +35,7 @@ pub fn spawn_sta_services_on_connect(
         .expect("spawn sta-udp");
     thread::Builder::new()
         .name("sta-tcp".into())
-        .spawn(move || run_tcp_control(device_id, sta_ip, servo, servo2, binding_state))
+        .spawn(move || run_tcp_control(device_id, sta_ip, servo, servo2, binding_state, pair_state))
         .expect("spawn sta-tcp");
 }
 
@@ -74,11 +77,12 @@ fn run_udp_broadcast(
 }
 
 fn run_tcp_control(
-    _device_id: String,
+    device_id: String,
     _sta_ip: String,
     servo: Option<Arc<ServoService>>,
     servo2: Option<Arc<ServoService>>,
     binding_state: BindingState,
+    pair_state: PairState,
 ) {
     let addr = format!("0.0.0.0:{}", STA_TCP_PORT);
     let listener = match TcpListener::bind(&addr) {
@@ -90,14 +94,17 @@ fn run_tcp_control(
     };
     info!("STA TCP control on {}", addr);
     for stream in listener.incoming().filter_map(Result::ok) {
-        if let Ok(peer) = stream.peer_addr() {
+        let peer_addr = stream.peer_addr().ok();
+        if let Some(ref peer) = peer_addr {
             info!("STA TCP client connected from {}", peer);
         }
         let servo = servo.clone();
         let servo2 = servo2.clone();
         let binding_state = Arc::clone(&binding_state);
+        let pair_state = Arc::clone(&pair_state);
+        let device_id = device_id.clone();
         thread::spawn(move || {
-            handle_sta_client(stream, &servo, &servo2, &binding_state);
+            handle_sta_client(stream, &device_id, &servo, &servo2, &binding_state, &pair_state, peer_addr);
         });
     }
 }
@@ -122,12 +129,14 @@ fn read_line(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
 }
 
 fn handle_sta_client(
-    mut stream: std::net::TcpStream,
+    mut stream: TcpStream,
+    device_id: &str,
     servo: &Option<Arc<ServoService>>,
     servo2: &Option<Arc<ServoService>>,
     binding_state: &BindingState,
+    pair_state: &PairState,
+    peer_addr: Option<std::net::SocketAddr>,
 ) {
-    use std::io::Write;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let line = match read_line(&mut stream) {
@@ -142,7 +151,7 @@ fn handle_sta_client(
         return;
     }
     info!("STA TCP cmd: {}", if msg.len() > 80 { format!("{}...", &msg[..80]) } else { msg.to_string() });
-    let response = process_sta_command(msg, servo, servo2, binding_state);
+    let response = process_sta_command(msg, device_id, servo, servo2, binding_state, pair_state, peer_addr);
     if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
         warn!("STA TCP write error");
     }
@@ -150,9 +159,12 @@ fn handle_sta_client(
 
 fn process_sta_command(
     msg: &str,
+    device_id: &str,
     servo: &Option<Arc<ServoService>>,
     servo2: &Option<Arc<ServoService>>,
     binding_state: &BindingState,
+    pair_state: &PairState,
+    peer_addr: Option<std::net::SocketAddr>,
 ) -> String {
     let json: serde_json::Value = match serde_json::from_str(msg) {
         Ok(j) => j,
@@ -193,6 +205,82 @@ fn process_sta_command(
             let mut state = binding_state.lock().unwrap_or_else(|e| e.into_inner());
             *state = (false, None);
             r#"{"status":"ok"}"#.to_string()
+        }
+        "pair_request" => {
+            if let (Some(target_ip), Some(_target_device_id)) = (
+                json.get("target_ip").and_then(|v| v.as_str()),
+                json.get("target_device_id").and_then(|v| v.as_str()),
+            ) {
+                let addr = format!("{}:{}", target_ip, STA_TCP_PORT);
+                if let Ok(mut other) = TcpStream::connect_timeout(
+                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
+                    Duration::from_secs(5),
+                ) {
+                    let req = serde_json::json!({"cmd":"pair_request","from_device_id": device_id});
+                    let _ = writeln!(other, "{}", req);
+                    let _ = other.flush();
+                    let mut line = Vec::new();
+                    let mut buf = [0u8; 1];
+                    let _ = other.set_read_timeout(Some(Duration::from_secs(3)));
+                    while other.read(&mut buf).ok() == Some(1) {
+                        if buf[0] == b'\n' {
+                            break;
+                        }
+                        if buf[0] != b'\r' {
+                            line.push(buf[0]);
+                        }
+                    }
+                    return r#"{"status":"ok"}"#.to_string();
+                }
+                return r#"{"status":"error","reason":"connect_target_failed"}"#.to_string();
+            }
+            if let Some(from_id) = json.get("from_device_id").and_then(|v| v.as_str()) {
+                let from_ip = peer_addr
+                    .and_then(|a| a.to_string().split(':').next().map(String::from))
+                    .unwrap_or_else(|| "0.0.0.0".to_string());
+                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                state.0.push((from_id.to_string(), from_ip));
+                return r#"{"status":"ok","message":"pending"}"#.to_string();
+            }
+            r#"{"status":"error","reason":"missing target_ip or from_device_id"}"#.to_string()
+        }
+        "get_pending_pair_requests" => {
+            let state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let pending: Vec<serde_json::Value> = state
+                .0
+                .iter()
+                .map(|(id, ip)| serde_json::json!({"from_device_id": id, "from_ip": ip}))
+                .collect();
+            serde_json::json!({"status":"ok","pending": pending}).to_string()
+        }
+        "accept_pair" => {
+            let from_device_id = json.get("from_device_id").and_then(|v| v.as_str()).unwrap_or("");
+            let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let from_ip = state.0.iter().find(|(id, _)| id == from_device_id).map(|(_, ip)| ip.clone());
+            if let Some(ip) = from_ip {
+                state.0.retain(|(id, _)| id != from_device_id);
+                state.1 = Some(from_device_id.to_string());
+                drop(state);
+                let addr = format!("{}:{}", ip, STA_TCP_PORT);
+                if let Ok(mut other) = TcpStream::connect_timeout(
+                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
+                    Duration::from_secs(5),
+                ) {
+                    let req = serde_json::json!({"cmd":"pair_accepted","device_id": device_id});
+                    let _ = writeln!(other, "{}", req);
+                    let _ = other.flush();
+                }
+                return r#"{"status":"ok"}"#.to_string();
+            }
+            r#"{"status":"error","reason":"pending_not_found"}"#.to_string()
+        }
+        "pair_accepted" => {
+            if let Some(peer_id) = json.get("device_id").and_then(|v| v.as_str()) {
+                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                state.1 = Some(peer_id.to_string());
+                return r#"{"status":"ok"}"#.to_string();
+            }
+            r#"{"status":"error","reason":"missing device_id"}"#.to_string()
         }
         _ => r#"{"status":"error","reason":"unknown cmd"}"#.to_string(),
     }

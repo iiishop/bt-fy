@@ -3,6 +3,7 @@ import 'package:op_wifi_utils/op_wifi_utils.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 import 'package:uuid/uuid.dart';
 
+import '../l10n/app_localizations.dart';
 import '../main.dart';
 import '../models/device.dart';
 import '../models/wifi_network.dart';
@@ -78,24 +79,21 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     }
   }
 
-  /// 用户点击某个设备热点：弹窗确认 → 由应用连接该 SoftAP → 等待流量到达该热点 → 自动 identify
   Future<void> _onTapDeviceHotspot(String ssid) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('连接设备热点'),
-        content: Text(
-          '即将连接到此设备热点「$ssid」。\n\n'
-          '确认后将由系统连接该热点，连接成功后会自动获取设备信息并进入下一步配网。',
-        ),
+        title: Text(l10n.t('connect_ap_title')),
+        content: Text(l10n.t('connect_ap_message', [ssid])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.t('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认连接'),
+            child: Text(l10n.t('confirm_connect')),
           ),
         ],
       ),
@@ -119,7 +117,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         if (mounted) {
           setState(() {
             _connecting = false;
-            _connectError = '无法连接热点：$err';
+            _connectError = l10n.t('connect_error', [err]);
           });
         }
         return;
@@ -144,7 +142,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       if (currentSsid != ssid) {
         setState(() {
           _connecting = false;
-          _connectError = '未检测到已连接至 $ssid，请到系统 Wi-Fi 中手动连接后重试';
+          _connectError = l10n.t('not_connected_to_ap', [ssid]);
         });
         return;
       }
@@ -164,8 +162,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         setState(() {
           _connecting = false;
           _connectError = identifyErr != null
-              ? '识别设备失败：$identifyErr'
-              : '已连接热点但无法识别设备，请确认设备已开机且固件支持配网';
+              ? l10n.t('identify_failed', [identifyErr!])
+              : l10n.t('identify_failed_generic');
         });
         return;
       }
@@ -202,27 +200,26 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       if (status == 'connecting' || status == 'ok') {
         _configError = null;
         if (mounted) {
+          final l10n = AppLocalizations.of(context);
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: const Text('配置已发送'),
-              content: const Text(
-                '请切回家庭 Wi-Fi，设备连上路由器后会自动出现在首页列表中并完成绑定。',
-              ),
+              title: Text(l10n.t('config_sent_title')),
+              content: Text(l10n.t('config_sent_message')),
               actions: [
                 FilledButton(
                   onPressed: () {
                     Navigator.pop(ctx);
                     if (context.mounted) Navigator.pop(context);
                   },
-                  child: const Text('确定'),
+                  child: Text(l10n.t('ok')),
                 ),
               ],
             ),
           );
         }
       } else {
-        _configError = result['reason'] as String? ?? '配置失败';
+        _configError = result['reason'] as String? ?? AppLocalizations.maybeOf(context)?.t('config_failed') ?? 'Config failed';
         PendingBindStore.clear();
       }
     });
@@ -250,24 +247,25 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('添加设备')),
+      appBar: AppBar(title: Text(l10n.t('add_device_title'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('1. 扫描设备热点', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(l10n.t('step1_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           if (_scanning)
             const LinearProgressIndicator()
           else
-            FilledButton(onPressed: _startScan, child: const Text('重新扫描')),
+            FilledButton(onPressed: _startScan, child: Text(l10n.t('rescan'))),
           if (_apList.isNotEmpty) ...[
             const SizedBox(height: 8),
-            const Text('点击要添加的设备热点，由应用连接并自动识别：', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            Text(l10n.t('step1_subtitle'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
             const SizedBox(height: 4),
             ..._apList.map((ap) => ListTile(
                   title: Text(ap.ssid),
-                  subtitle: Text('信号 ${ap.level} dBm · 点击后弹窗确认连接'),
+                  subtitle: Text(l10n.t('step1_ap_subtitle', [ap.level.toString()])),
                   enabled: !_connecting,
                   onTap: () => _onTapDeviceHotspot(ap.ssid),
                 )),
@@ -275,30 +273,30 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           if (_connecting) ...[
             const SizedBox(height: 12),
             const Center(child: CircularProgressIndicator()),
-            const Center(child: Text('正在连接设备热点并识别…')),
+            Center(child: Text(l10n.t('connecting'))),
           ],
           if (_connectError != null) ...[
             const SizedBox(height: 8),
             Text(_connectError!, style: const TextStyle(color: Colors.red)),
           ],
           const Divider(height: 24),
-          const Text('2. 设备信息', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(l10n.t('step2_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
           if (_identifiedDeviceId != null)
             ListTile(
-              title: const Text('已发现设备'),
-              subtitle: Text('$_identifiedDeviceId · 固件 $_identifiedFw'),
+              title: Text(l10n.t('device_found')),
+              subtitle: Text('$_identifiedDeviceId · ${l10n.t('firmware')} $_identifiedFw'),
             )
           else if (!_connecting)
-            const Text('点击上方设备热点，确认连接后会自动识别', style: TextStyle(color: Colors.grey)),
+            Text(l10n.t('step2_subtitle'), style: const TextStyle(color: Colors.grey)),
           if (_identifiedDeviceId != null) ...[
             const SizedBox(height: 8),
-            const Text('选择家庭 Wi-Fi 并发送配置（发完后可切回家庭 Wi-Fi）', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(l10n.t('step2_wifi_hint'), style: const TextStyle(fontWeight: FontWeight.bold)),
             FutureBuilder<List<WifiNetwork>>(
               future: _wifiStorage.getAll(),
               builder: (context, snap) {
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
-                  return const Text('请先在「Wi-Fi 管理」中添加家庭 Wi-Fi', style: TextStyle(color: Colors.grey));
+                  return Text(l10n.t('add_wifi_first'), style: const TextStyle(color: Colors.grey));
                 }
                 return Column(
                   children: list
@@ -321,7 +319,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           ],
           if (_pendingDevices.isNotEmpty) ...[
             const Divider(height: 24),
-            const Text('3. 待绑定设备（请确认舵机动作后绑定）', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(l10n.t('step3_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
             ..._pendingDevices.map((d) => ListTile(
                   title: Text(d.deviceId),
                   subtitle: Text(d.ipAddress),
@@ -338,7 +336,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   onPressed: _binding ? null : _confirmBind,
                   child: _binding
                       ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('确认绑定'),
+                      : Text(l10n.t('confirm_bind')),
                 ),
               ),
           ],

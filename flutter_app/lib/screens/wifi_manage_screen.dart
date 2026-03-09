@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/wifi_network.dart';
 import '../services/wifi_storage_service.dart';
 
-/// Wi-Fi 网络管理：增删改查（设计 2.2）
 class WifiManageScreen extends StatefulWidget {
   const WifiManageScreen({super.key});
 
@@ -32,12 +32,13 @@ class _WifiManageScreenState extends State<WifiManageScreen> {
   }
 
   Future<void> _addOrEdit([WifiNetwork? existing]) async {
+    final l10n = AppLocalizations.of(context);
     final ssidController = TextEditingController(text: existing?.ssid ?? '');
     final pwdController = TextEditingController(text: existing?.password ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? '添加 Wi-Fi' : '编辑 Wi-Fi'),
+        title: Text(existing == null ? l10n.t('add_wifi') : l10n.t('edit_wifi')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -49,17 +50,17 @@ class _WifiManageScreenState extends State<WifiManageScreen> {
               ),
               TextField(
                 controller: pwdController,
-                decoration: const InputDecoration(labelText: '密码'),
+                decoration: InputDecoration(labelText: l10n.t('password')),
                 obscureText: true,
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('cancel'))),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('保存'),
+            child: Text(l10n.t('save')),
           ),
         ],
       ),
@@ -75,14 +76,15 @@ class _WifiManageScreenState extends State<WifiManageScreen> {
   }
 
   Future<void> _delete(WifiNetwork w) async {
+    final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
-        content: Text('确定删除「${w.ssid}」？'),
+        title: Text(l10n.t('delete')),
+        content: Text(l10n.t('delete_confirm', [w.ssid])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.t('delete'))),
         ],
       ),
     );
@@ -94,19 +96,20 @@ class _WifiManageScreenState extends State<WifiManageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Wi-Fi 管理')),
+      appBar: AppBar(title: Text(l10n.t('wifi_manage_title'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _list.isEmpty
-              ? const Center(child: Text('暂无已保存的 Wi-Fi，请点击 + 添加'))
+              ? Center(child: Text(l10n.t('no_wifi_saved')))
               : ListView.builder(
                   itemCount: _list.length,
                   itemBuilder: (context, index) {
                     final w = _list[index];
                     return ListTile(
                       title: Text(w.ssid),
-                      subtitle: Text('已保存密码'),
+                      subtitle: Text(l10n.t('password_saved')),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

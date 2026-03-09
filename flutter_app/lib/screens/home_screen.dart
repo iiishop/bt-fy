@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/device.dart';
 import '../services/device_discovery_service.dart';
 import '../services/device_storage_service.dart';
+import '../services/discovered_devices_store.dart';
 import '../services/pending_bind_store.dart';
 import 'add_device_screen.dart';
 import 'device_detail_screen.dart';
 import 'wifi_manage_screen.dart';
 
-/// 已绑定设备列表（设计 2.4）；回到原 AP 后通过 UDP 搜索 butterfly 设备并仅更新已配对设备的 IP/在线状态
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -36,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
         } else {
           _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
         }
+        DiscoveredDevicesStore.update(device.deviceId, device.ipAddress);
       });
     },
     onBindingSeen: (deviceId, ip, bindToken) async {
@@ -51,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ipAddress: ip,
         isBound: true,
       ));
+      DiscoveredDevicesStore.update(deviceId, ip);
       if (!mounted) return;
       setState(() {});
       _loadDevices();
@@ -91,10 +94,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('智能设备'),
+        title: Text(l10n.t('app_title')),
         actions: [
+          TextButton(
+            onPressed: () => l10n.setLocale(l10n.locale == 'en' ? 'zh' : 'en'),
+            child: Text(l10n.languageToggleLabel, style: const TextStyle(fontSize: 14)),
+          ),
           IconButton(
             icon: const Icon(Icons.wifi),
             onPressed: () async {
@@ -119,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text(
-                        '已绑定设备',
+                        l10n.t('bound_devices'),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -138,13 +146,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           subtitle: Text(d.ipAddress.isEmpty ? d.deviceId : '${d.ipAddress} · ${d.deviceId}'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
-                            await Navigator.push(
+                            final updated = await Navigator.push<Device>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => DeviceDetailScreen(device: d),
                               ),
                             );
-                            _loadDevices();
+                            if (updated != null) {
+                              final i = _devices.indexWhere((e) => e.deviceId == updated.deviceId);
+                              if (i >= 0) {
+                                setState(() => _devices[i] = updated);
+                                await _deviceStorage.save(updated);
+                              }
+                            }
+                            await _loadDevices();
                           },
                         );
                       },
@@ -156,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                       child: Text(
-                        '发现的设备（未绑定）',
+                        l10n.t('discovered_devices'),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -168,10 +183,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         return ListTile(
                           leading: const Icon(Icons.router, color: Colors.grey),
                           title: Text(d.deviceId),
-                          subtitle: Text(d.ipAddress.isEmpty ? '等待 IP' : d.ipAddress),
+                          subtitle: Text(d.ipAddress.isEmpty ? l10n.t('waiting_ip') : d.ipAddress),
                           trailing: FilledButton(
                             onPressed: () => _addDiscoveredDevice(d),
-                            child: const Text('添加'),
+                            child: Text(l10n.t('add')),
                           ),
                         );
                       },
@@ -188,12 +203,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const Icon(Icons.devices_other, size: 64, color: Colors.grey),
                           const SizedBox(height: 16),
-                          const Text('暂无已绑定设备'),
+                          Text(l10n.t('no_bound_devices')),
                           const SizedBox(height: 24),
                           FilledButton.icon(
                             onPressed: _goAddDevice,
                             icon: const Icon(Icons.add),
-                            label: const Text('添加设备'),
+                            label: Text(l10n.t('add_device')),
                           ),
                         ],
                       ),

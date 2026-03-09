@@ -7,6 +7,7 @@ class Device {
     this.isOnline = true,
     DateTime? lastSeen,
     this.isBound = true,
+    this.pairedWithDeviceId,
   }) : lastSeen = lastSeen ?? DateTime.now();
 
   final String deviceId;
@@ -16,6 +17,8 @@ class Device {
   final DateTime lastSeen;
   /// 是否已绑定（待绑定列表中的设备为 false）
   final bool isBound;
+  /// 已配对的对方设备 ID（同一局域网内配对，用于显示）
+  final String? pairedWithDeviceId;
 
   Device copyWith({
     String? deviceId,
@@ -24,6 +27,7 @@ class Device {
     bool? isOnline,
     DateTime? lastSeen,
     bool? isBound,
+    String? pairedWithDeviceId,
   }) {
     return Device(
       deviceId: deviceId ?? this.deviceId,
@@ -32,6 +36,7 @@ class Device {
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
       isBound: isBound ?? this.isBound,
+      pairedWithDeviceId: pairedWithDeviceId ?? this.pairedWithDeviceId,
     );
   }
 
@@ -42,6 +47,7 @@ class Device {
         'isOnline': isOnline,
         'lastSeen': lastSeen.toIso8601String(),
         'isBound': isBound,
+        if (pairedWithDeviceId != null) 'pairedWithDeviceId': pairedWithDeviceId,
       };
 
   static Device? fromJson(Map<String, dynamic>? json) {
@@ -55,6 +61,7 @@ class Device {
           ? DateTime.tryParse(json['lastSeen'] as String) ?? DateTime.now()
           : DateTime.now(),
       isBound: json['isBound'] as bool? ?? true,
+      pairedWithDeviceId: json['pairedWithDeviceId'] as String?,
     );
   }
 }
