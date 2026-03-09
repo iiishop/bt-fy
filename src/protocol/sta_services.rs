@@ -1,6 +1,7 @@
 //! STA 模式：UDP 广播（hello/heartbeat）+ TCP 控制服务（设计 5.2）
 
 use log::{info, warn};
+use std::io::Read;
 use std::net::{SocketAddrV4, TcpListener, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -89,6 +90,9 @@ fn run_tcp_control(
     };
     info!("STA TCP control on {}", addr);
     for stream in listener.incoming().filter_map(Result::ok) {
+        if let Ok(peer) = stream.peer_addr() {
+            info!("STA TCP client connected from {}", peer);
+        }
         let servo = servo.clone();
         let servo2 = servo2.clone();
         let binding_state = Arc::clone(&binding_state);
@@ -98,29 +102,50 @@ fn run_tcp_control(
     }
 }
 
+/// 从 stream 读一行（到 \n 或 EOF），不依赖 try_clone（ESP32 上常不可用）
+fn read_line(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
+    let mut line = Vec::new();
+    let mut buf = [0u8; 1];
+    loop {
+        let n = stream.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if buf[0] == b'\n' {
+            break;
+        }
+        if buf[0] != b'\r' {
+            line.push(buf[0]);
+        }
+    }
+    Ok(String::from_utf8_lossy(&line).into_owned())
+}
+
 fn handle_sta_client(
-    stream: std::net::TcpStream,
+    mut stream: std::net::TcpStream,
     servo: &Option<Arc<ServoService>>,
     servo2: &Option<Arc<ServoService>>,
     binding_state: &BindingState,
 ) {
-    use std::io::{BufRead, Write};
-    let mut stream = stream;
+    use std::io::Write;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-    let stream2 = match stream.try_clone() {
+    let line = match read_line(&mut stream) {
         Ok(s) => s,
-        Err(_) => return,
+        Err(e) => {
+            warn!("STA TCP read error: {}", e);
+            return;
+        }
     };
-    let mut reader = std::io::BufReader::new(stream2);
-    let mut line = String::new();
-    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+    let msg = line.trim();
+    if msg.is_empty() {
         return;
     }
-    let msg = line.trim();
+    info!("STA TCP cmd: {}", if msg.len() > 80 { format!("{}...", &msg[..80]) } else { msg.to_string() });
     let response = process_sta_command(msg, servo, servo2, binding_state);
-    let _ = writeln!(stream, "{}", response);
-    let _ = stream.flush();
+    if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
+        warn!("STA TCP write error");
+    }
 }
 
 fn process_sta_command(

@@ -24,8 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         final i = _devices.indexWhere((d) => d.deviceId == device.deviceId);
         if (i >= 0) {
+          final newIp = device.ipAddress.isEmpty || device.ipAddress == '0.0.0.0'
+              ? _devices[i].ipAddress
+              : device.ipAddress;
           _devices[i] = _devices[i].copyWith(
-            ipAddress: device.ipAddress,
+            ipAddress: newIp,
             lastSeen: device.lastSeen,
             isOnline: true,
           );
@@ -36,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     },
     onBindingSeen: (deviceId, ip, bindToken) async {
+      if (ip.isEmpty || ip == '0.0.0.0') return;
       final p = PendingBindStore.getPending();
       if (p == null || p.token != bindToken) return;
       final res = await DeviceDiscoveryService.bind(ip, p.phoneId);

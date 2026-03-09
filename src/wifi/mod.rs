@@ -39,7 +39,7 @@ pub struct ApEntry {
 }
 
 /// STA connection info for JSON
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StaInfo {
     pub ip: String,
     pub ssid: String,
@@ -286,12 +286,16 @@ impl WifiService {
             return WifiResponse::Connect(Err("Connection timeout".to_string()));
         }
 
-        // Wait for DHCP / netif up
-        std::thread::sleep(Duration::from_secs(2));
-        match self.do_status() {
-            WifiResponse::Status(Some(sta)) => WifiResponse::Connect(Ok(sta)),
-            _ => WifiResponse::Connect(Err("Connected but no IP yet".to_string())),
+        // Wait for DHCP: poll until we get a non-zero IP (some routers need >2s)
+        for _ in 0..12 {
+            std::thread::sleep(Duration::from_secs(1));
+            if let WifiResponse::Status(Some(ref sta)) = self.do_status() {
+                if !sta.ip.is_empty() && sta.ip != "0.0.0.0" {
+                    return WifiResponse::Connect(Ok(sta.clone()));
+                }
+            }
         }
+        WifiResponse::Connect(Err("DHCP timeout (no IP)".to_string()))
     }
 
     fn do_status(&mut self) -> WifiResponse {

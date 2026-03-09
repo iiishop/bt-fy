@@ -108,15 +108,38 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     );
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+    );
+  }
+
   Future<void> _sendMoveServo(int index, int angle) async {
+    if (widget.device.ipAddress.isEmpty) {
+      _showError('设备 IP 为空，请返回首页等待设备上线');
+      return;
+    }
     setState(() => _busy = true);
-    await DeviceDiscoveryService.moveServo(widget.device.ipAddress, index, angle);
+    final res = await DeviceDiscoveryService.moveServo(widget.device.ipAddress, index, angle);
+    if (!mounted) return;
     setState(() => _busy = false);
+    if (res['status'] != 'ok') {
+      _showError(res['reason']?.toString() ?? '设置失败');
+    }
   }
 
   Future<void> _demoServo() async {
+    if (widget.device.ipAddress.isEmpty) {
+      _showError('设备 IP 为空，请返回首页等待设备上线');
+      return;
+    }
     setState(() => _busy = true);
-    await DeviceDiscoveryService.demoServo(widget.device.ipAddress);
+    final res = await DeviceDiscoveryService.demoServo(widget.device.ipAddress);
+    if (!mounted) return;
     setState(() => _busy = false);
+    if (res['status'] != 'ok') {
+      _showError(res['reason']?.toString() ?? '演示失败');
+    }
   }
 }
