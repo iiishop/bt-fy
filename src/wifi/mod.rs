@@ -150,7 +150,7 @@ impl WifiService {
             .or_else(|_| read_mac_efuse())
             .unwrap_or([0u8; 6]);
         let ssid = format!(
-            "{}-{:02X}{:02X}{:02X}{:02X}",
+            "{}{:02X}{:02X}{:02X}{:02X}",
             WIFI_SSID_PREFIX,
             mac[2],
             mac[3],
@@ -194,9 +194,22 @@ impl WifiService {
         Ok(())
     }
 
-    /// AP SSID (with MAC suffix), e.g. butterfly-A1B2C3D4
+    /// AP SSID (with MAC suffix), e.g. ESP_A1B2C3D4
     pub fn ap_ssid(&self) -> &str {
         self.ap_config.ssid.as_str()
+    }
+
+    /// 设备唯一 ID（MAC 字符串，与 App 协议一致）
+    pub fn get_device_id(&self) -> String {
+        let mac = self
+            .wifi
+            .get_mac(esp_idf_svc::wifi::WifiDeviceId::Sta)
+            .or_else(|_| read_mac_efuse())
+            .unwrap_or([0u8; 6]);
+        format!(
+            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        )
     }
 
     /// Execute a WiFi command (called from main thread only)

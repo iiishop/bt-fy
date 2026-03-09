@@ -9,8 +9,8 @@ use std::net::Ipv4Addr;
 /// All services (DNS, HTTP) run on this IP
 pub const AP_IP_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 71, 1);
 
-/// WiFi SSID prefix; actual SSID is "{prefix}-{MAC suffix}", e.g. butterfly-A1B2C3D4
-pub const WIFI_SSID_PREFIX: &str = "butterfly";
+/// WiFi SSID prefix; actual SSID is "{prefix}{MAC suffix}", e.g. ESP_A1B2C3D4（与 App 发现约定一致）
+pub const WIFI_SSID_PREFIX: &str = "ESP_";
 
 /// WiFi channel
 pub const WIFI_CHANNEL: u8 = 1;
@@ -18,8 +18,18 @@ pub const WIFI_CHANNEL: u8 = 1;
 /// DNS server port
 pub const DNS_PORT: u16 = 53;
 
+/// 是否启用 DNS 截获（captive portal 将所有域名解析到 AP IP）。已关闭，相关 DNS 代码已标记为过时。
+pub const ENABLE_DNS_CAPTIVE: bool = false;
+
 /// HTTP server port  
 pub const HTTP_PORT: u16 = 80;
+
+/// AP 模式配网 TCP 端口（JSON 协议：identify / config）
+pub const AP_TCP_PORT: u16 = 1234;
+
+/// STA 模式：UDP 广播端口与 TCP 控制端口
+pub const STA_UDP_PORT: u16 = 12345;
+pub const STA_TCP_PORT: u16 = 12345;
 
 /// Subnet mask (24 = 255.255.255.0)
 pub const SUBNET_MASK: u8 = 24;

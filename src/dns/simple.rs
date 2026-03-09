@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use log::{info, warn};
 use std::{
     io,
@@ -5,6 +7,13 @@ use std::{
     time::Duration,
 };
 
+/// 简易 DNS 服务器：将所有查询解析到指定 IP（captive portal 用）。
+///
+/// **已过时**：当前固件不再启用 DNS 截获。
+#[deprecated(
+    since = "0.2.0",
+    note = "DNS 截获已关闭，仅当 ENABLE_DNS_CAPTIVE 为 true 时使用"
+)]
 pub struct SimpleDns {
     footer: [u8; 16],
     socket: UdpSocket,

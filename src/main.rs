@@ -7,6 +7,7 @@
 
 mod dns;
 mod hardware;
+mod protocol;
 mod system;
 mod web;
 mod wifi;

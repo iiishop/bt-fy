@@ -3,6 +3,8 @@
 //! This module provides the main application logic.
 //! It coordinates all services (WiFi, DNS, Web, Hardware) and manages their lifecycle.
 
+#![allow(deprecated)] // DNS 模块已标记过时但仍保留类型，由 ENABLE_DNS_CAPTIVE 控制是否启动
+
 pub mod config;
 
 use esp_idf_hal::{
@@ -19,18 +21,24 @@ use std::sync::Arc;
 use crate::{
     dns::DnsService,
     hardware::{ServoService, VL53L0XService},
-    system::config::{AP_IP_ADDRESS, SERVO2_PIN, SERVO_PIN},
+    protocol::{spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PendingBindToken, PendingConfigDone},
+    system::config::{AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN},
     web::{HardwareStatus, WebService},
     wifi::{WifiCommand, WifiResponse, WifiService},
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// 每 boot 只启动一次 STA 服务，避免重复 bind 12345 导致 Address already in use
+static STA_SERVICES_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Main system that orchestrates all services
 pub struct ButterflySystem {
     _nvs: EspDefaultNvsPartition,
     wifi: WifiService,
+    wifi_cmd_tx: Option<mpsc::Sender<(WifiCommand, mpsc::Sender<WifiResponse>)>>,
     wifi_cmd_rx: Option<mpsc::Receiver<(WifiCommand, mpsc::Sender<WifiResponse>)>>,
     dns: DnsService,
     web: WebService,
@@ -63,7 +71,7 @@ impl ButterflySystem {
 
         let (wifi_cmd_tx, wifi_cmd_rx) = mpsc::channel();
         let mut web = WebService::new(AP_IP_ADDRESS)?;
-        web.set_wifi_cmd_tx(Some(wifi_cmd_tx));
+        web.set_wifi_cmd_tx(Some(wifi_cmd_tx.clone()));
         info!("Web service created");
 
         let dns = DnsService::new(AP_IP_ADDRESS)?;
@@ -79,6 +87,7 @@ impl ButterflySystem {
         Ok(Self {
             _nvs: nvs,
             wifi,
+            wifi_cmd_tx: Some(wifi_cmd_tx),
             wifi_cmd_rx: Some(wifi_cmd_rx),
             dns,
             web,
@@ -203,9 +212,13 @@ impl ButterflySystem {
         self.wifi.start()?;
         info!("WiFi started");
 
-        // Start DNS server - required for captive portal
-        self.dns.start()?;
-        info!("DNS server started");
+        // DNS 截获已关闭（ENABLE_DNS_CAPTIVE = false），不再启动
+        if ENABLE_DNS_CAPTIVE {
+            self.dns.start()?;
+            info!("DNS server started");
+        } else {
+            info!("DNS captive portal disabled (ENABLE_DNS_CAPTIVE=false)");
+        }
 
         // Configure hardware status for web service
         if self.sensor.is_some() || self.servo.is_some() || self.servo2.is_some() {
@@ -330,10 +343,51 @@ impl ButterflySystem {
         self.web.start()?;
         info!("Web server started");
 
+        // AP 模式配网 TCP 1234（identify / config）；手机发完 config 可离开热点，STA 连上后在 WiFi 里持续发 binding，手机回信后完成绑定
+        let binding_state: BindingState = Arc::new(Mutex::new((false, None)));
+        let (sta_start_tx, sta_start_rx) = mpsc::channel::<(String, String, Option<String>)>();
+        let pending_config_done: PendingConfigDone = Arc::new(Mutex::new(None));
+        let pending_bind_token: PendingBindToken = Arc::new(Mutex::new(None));
+        let wifi_cmd_tx = self.wifi_cmd_tx.take().expect("wifi_cmd_tx");
+        let sta_start_tx_for_loop = sta_start_tx.clone();
+        let _wifi_cmd_tx_for_loop = wifi_cmd_tx.clone();
+        let pending_config_done_loop = Arc::clone(&pending_config_done);
+        let pending_bind_token_loop = Arc::clone(&pending_bind_token);
+        let device_id = self.wifi.get_device_id();
+        start_ap_tcp_listener(
+            device_id.clone(),
+            "1.0.0".to_string(),
+            wifi_cmd_tx,
+            None,
+            pending_config_done,
+            pending_bind_token,
+        );
+        let servo_for_sta = self.servo.clone();
+        let servo2_for_sta = self.servo2.clone();
+        let binding_state_clone = Arc::clone(&binding_state);
+        std::thread::Builder::new()
+            .name("sta-starter".into())
+            .spawn(move || {
+                while let Ok((did, sta_ip, bind_token)) = sta_start_rx.recv() {
+                    if STA_SERVICES_STARTED.swap(true, Ordering::Relaxed) {
+                        log::warn!("STA services already running, skip duplicate spawn");
+                        continue;
+                    }
+                    spawn_sta_services_on_connect(
+                        did,
+                        sta_ip,
+                        bind_token,
+                        servo_for_sta.clone(),
+                        servo2_for_sta.clone(),
+                        Arc::clone(&binding_state_clone),
+                    );
+                }
+            })?;
+
         // Print system status
         Self::print_status(&self);
 
-        // Command loop: process WiFi commands from HTTP handlers
+        // Command loop: process WiFi commands from HTTP handlers and AP TCP
         let mut wifi = self.wifi;
         let wifi_cmd_rx = self.wifi_cmd_rx.take().expect("wifi_cmd_rx");
         info!("System is running.");
@@ -341,6 +395,15 @@ impl ButterflySystem {
             match wifi_cmd_rx.recv_timeout(Duration::from_secs(1)) {
                 Ok((cmd, reply_tx)) => {
                     let response = wifi.execute(cmd);
+                    // Connect 成功后：取走 pending_bind_token，启动 STA 服务（UDP 持续发 binding 直至收到手机回信）
+                    if let WifiResponse::Connect(Ok(ref sta)) = response {
+                        let did = wifi.get_device_id();
+                        let bind_token = pending_bind_token_loop.lock().unwrap().take();
+                        if let Some(tx) = pending_config_done_loop.lock().unwrap().take() {
+                            let _ = tx.send((did.clone(), sta.ip.clone(), did.clone()));
+                        }
+                        let _ = sta_start_tx_for_loop.send((did, sta.ip.clone(), bind_token));
+                    }
                     let _ = reply_tx.send(response);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -368,7 +431,9 @@ impl ButterflySystem {
         info!("========================================");
         info!("WiFi SSID: {} (no password)", system.wifi.ap_ssid());
         info!("IP Address: {}", AP_IP_ADDRESS);
-        info!("DNS Server: {}:53", AP_IP_ADDRESS);
+        if ENABLE_DNS_CAPTIVE {
+            info!("DNS Server: {}:53", AP_IP_ADDRESS);
+        }
         info!("HTTP Server: http://{}", AP_IP_ADDRESS);
 
         if system.sensor.is_some() || system.servo.is_some() || system.servo2.is_some() {

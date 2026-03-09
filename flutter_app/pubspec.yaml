@@ -31,9 +31,20 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # 安全存储 Wi-Fi 凭据
+  flutter_secure_storage: ^9.2.2
+  # 当前 Wi-Fi 信息（SSID 等）
+  network_info_plus: ^6.0.0
+  # Wi-Fi 扫描（发现 ESP_ 热点）
+  wifi_scan: ^0.4.1
+  # 由应用发起连接设备热点（Android 10+ WifiNetworkSpecifier / iOS NEHotspotConfiguration）
+  op_wifi_utils: ^1.4.2
+  # 设备发现与控制：UDP/TCP
+  # 使用 dart:io Socket/RawDatagramSocket，无额外依赖
+  uuid: ^4.5.1
+  # 控制台日志（flutter run 时在终端可见，release 构建会裁剪）
+  logger: ^2.4.0
 
 dev_dependencies:
   flutter_test:

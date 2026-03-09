@@ -114,6 +114,17 @@ impl ServoService {
     pub fn get_angle(&self) -> u16 {
         self.angle.lock().map(|a| *a).unwrap_or(90)
     }
+
+    /// 演示序列：40° → 120° → 40°（设计文档 2.3.6），每步停留 0.5 秒
+    pub fn demo_sequence(&self) -> Result<(), String> {
+        const DELAY_MS: u64 = 500;
+        const ANGLES: [u16; 3] = [40, 120, 40];
+        for &a in &ANGLES {
+            self.set_angle(a)?;
+            std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
+        }
+        Ok(())
+    }
 }
 
 fn angle_to_pulse_us(angle: u16) -> u32 {

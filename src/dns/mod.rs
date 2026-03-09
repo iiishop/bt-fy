@@ -2,6 +2,14 @@
 //!
 //! Provides DNS server functionality for the captive portal.
 //! All DNS queries are intercepted and resolved to the AP's IP address.
+//!
+//! **已过时**：DNS 截获已关闭（`ENABLE_DNS_CAPTIVE = false`），配网改为 App 直连设备热点 + TCP 协议。
+
+#![deprecated(
+    since = "0.2.0",
+    note = "DNS 截获已关闭，请使用 ENABLE_DNS_CAPTIVE 控制；配网通过 App 连接 ESP_ 热点与 TCP 1234 完成"
+)]
+#![allow(deprecated)] // 本模块内部仍使用已过时类型，由 ENABLE_DNS_CAPTIVE 控制是否启动
 
 mod simple;
 
@@ -14,6 +22,10 @@ pub use simple::SimpleDns;
 ///
 /// This service handles DNS queries in a background thread.
 /// When started, it spawns a thread that continuously polls for DNS queries.
+#[deprecated(
+    since = "0.2.0",
+    note = "DNS 截获已关闭，仅当 ENABLE_DNS_CAPTIVE 为 true 时启动"
+)]
 pub struct DnsService {
     ap_ip: Ipv4Addr,
     _handle: Option<std::thread::JoinHandle<()>>,
