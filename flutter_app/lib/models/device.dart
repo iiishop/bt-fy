@@ -8,6 +8,7 @@ class Device {
     DateTime? lastSeen,
     this.isBound = true,
     this.pairedWithDeviceId,
+    this.lastConnectedSsid,
   }) : lastSeen = lastSeen ?? DateTime.now();
 
   final String deviceId;
@@ -15,10 +16,10 @@ class Device {
   final String ipAddress;
   final bool isOnline;
   final DateTime lastSeen;
-  /// 是否已绑定（待绑定列表中的设备为 false）
   final bool isBound;
-  /// 已配对的对方设备 ID（同一局域网内配对，用于显示）
   final String? pairedWithDeviceId;
+  /// 设备当前/最后连接的 WiFi 名称（由 UDP heartbeat/binding 上报）
+  final String? lastConnectedSsid;
 
   Device copyWith({
     String? deviceId,
@@ -28,6 +29,7 @@ class Device {
     DateTime? lastSeen,
     bool? isBound,
     String? pairedWithDeviceId,
+    String? lastConnectedSsid,
   }) {
     return Device(
       deviceId: deviceId ?? this.deviceId,
@@ -37,6 +39,7 @@ class Device {
       lastSeen: lastSeen ?? this.lastSeen,
       isBound: isBound ?? this.isBound,
       pairedWithDeviceId: pairedWithDeviceId ?? this.pairedWithDeviceId,
+      lastConnectedSsid: lastConnectedSsid ?? this.lastConnectedSsid,
     );
   }
 
@@ -48,6 +51,7 @@ class Device {
         'lastSeen': lastSeen.toIso8601String(),
         'isBound': isBound,
         if (pairedWithDeviceId != null) 'pairedWithDeviceId': pairedWithDeviceId,
+        if (lastConnectedSsid != null && lastConnectedSsid!.isNotEmpty) 'lastConnectedSsid': lastConnectedSsid,
       };
 
   static Device? fromJson(Map<String, dynamic>? json) {
@@ -62,6 +66,7 @@ class Device {
           : DateTime.now(),
       isBound: json['isBound'] as bool? ?? true,
       pairedWithDeviceId: json['pairedWithDeviceId'] as String?,
+      lastConnectedSsid: json['lastConnectedSsid'] as String?,
     );
   }
 }

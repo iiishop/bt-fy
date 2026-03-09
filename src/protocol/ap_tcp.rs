@@ -2,7 +2,7 @@
 //! 配网成功后保持 SoftAP，通过 channel 回传 success + deviceId/staIp/mac 给 Flutter，再继续读下一行。
 
 use log::{info, warn};
-use std::io::{Read, Write};
+use std::io::{Read, Write, ErrorKind};
 use std::net::TcpListener;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -99,7 +99,15 @@ fn handle_ap_client(
         let line = match read_line(&mut stream) {
             Ok(s) => s,
             Err(e) => {
-                warn!("AP TCP read error: {}", e);
+                // 对方断开、重置等视为正常，不刷 warn（ESP 上 128 = Socket is not connected）
+                let ok_disconnect = matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+                    | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof)
+                    || e.raw_os_error() == Some(128);
+                if ok_disconnect {
+                    info!("AP TCP client disconnected");
+                } else {
+                    warn!("AP TCP read error: {}", e);
+                }
                 break;
             }
         };
@@ -117,44 +125,62 @@ fn handle_ap_client(
         };
         let cmd = json.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
         if cmd == "config" {
-            // 配网：保存 bindToken，发 Connect，立即回 connecting；手机可离开热点，STA 连上后会在 WiFi 里持续发 binding，手机在原 WiFi 收听后回信完成绑定
+            // 配网：保存 bindToken；支持单条 ssid 或 networks 数组，按信号强度选最佳连接
             let bind_token = json.get("phone").and_then(|v| v.as_str()).map(String::from);
             if let Some(ref token) = bind_token {
                 let mut guard = pending_bind_token.lock().unwrap();
                 *guard = Some(token.clone());
             }
-            let ssid = json
-                .get("ssid")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let pwd = json.get("pwd").and_then(|s| s.as_str()).map(String::from);
-            let sec = json.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
-            let auth = match sec {
-                0 => "open",
-                1 => "wep",
-                2 => "wpa",
-                3 => "wpa2",
-                4 => "wpa3",
-                5 => "wpa2_enterprise",
-                _ => "wpa2",
+            let wifi_cmd: WifiCommand = if let Some(networks) = json.get("networks").and_then(|n| n.as_array()) {
+                let list: Vec<(String, Option<String>, String)> = networks
+                    .iter()
+                    .filter_map(|n| {
+                        let obj = n.as_object()?;
+                        let ssid = obj.get("ssid").and_then(|s| s.as_str())?.to_string();
+                        let pwd = obj.get("pwd").and_then(|s| s.as_str()).map(String::from);
+                        let sec = obj.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
+                        let auth = match sec {
+                            0 => "open",
+                            1 => "wep",
+                            2 => "wpa",
+                            3 => "wpa2",
+                            4 => "wpa3",
+                            5 => "wpa2_enterprise",
+                            _ => "wpa2",
+                        };
+                        Some((ssid, pwd, auth.to_string()))
+                    })
+                    .collect();
+                WifiCommand::ConnectFromList(list)
+            } else {
+                let ssid = json
+                    .get("ssid")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let pwd = json.get("pwd").and_then(|s| s.as_str()).map(String::from);
+                let sec = json.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
+                let auth = match sec {
+                    0 => "open",
+                    1 => "wep",
+                    2 => "wpa",
+                    3 => "wpa2",
+                    4 => "wpa3",
+                    5 => "wpa2_enterprise",
+                    _ => "wpa2",
+                };
+                WifiCommand::Connect {
+                    ssid,
+                    password: pwd,
+                    username: None,
+                    auth: auth.to_string(),
+                }
             };
             let (reply_tx, reply_rx) = mpsc::channel();
             thread::spawn(move || {
                 let _ = reply_rx.recv();
             });
-            if wifi_cmd_tx
-                .send((
-                    WifiCommand::Connect {
-                        ssid,
-                        password: pwd,
-                        username: None,
-                        auth: auth.to_string(),
-                    },
-                    reply_tx,
-                ))
-                .is_err()
-            {
+            if wifi_cmd_tx.send((wifi_cmd, reply_tx)).is_err() {
                 let mut guard = pending_bind_token.lock().unwrap();
                 *guard = None;
                 let _ = writeln!(stream, "{}", r#"{"status":"error","reason":"internal"}"#);

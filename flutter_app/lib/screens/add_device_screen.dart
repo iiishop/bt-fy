@@ -13,7 +13,7 @@ import '../services/device_storage_service.dart';
 import '../services/pending_bind_store.dart';
 import '../services/wifi_storage_service.dart';
 
-/// 添加设备：扫描 ESP_ 热点 → 点击后弹窗确认 → 由应用连接热点 → 检测已连上后自动 identify → 选 Wi-Fi 发 config → 设备连路由器并关 SoftAP → 监听广播 → 确认绑定
+/// 添加设备：扫描 BF_ 热点 → 点击后弹窗确认 → 由应用连接热点 → 检测已连上后自动 identify → 选 Wi-Fi 发 config → 设备连路由器并关 SoftAP → 监听广播 → 确认绑定
 class AddDeviceScreen extends StatefulWidget {
   const AddDeviceScreen({super.key});
 
@@ -70,7 +70,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       await Future.delayed(const Duration(seconds: 3));
     }
     final list = await WiFiScan.instance.getScannedResults();
-    final esp = list.where((ap) => ap.ssid.startsWith('ESP_')).toList();
+    final esp = list.where((ap) => ap.ssid.startsWith('BF_')).toList();
     if (mounted) {
       setState(() {
         _apList = esp;
@@ -184,7 +184,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     }
   }
 
-  Future<void> _sendConfig(WifiNetwork wifi) async {
+  Future<void> _sendConfigAll() async {
+    final list = await _wifiStorage.getAll();
+    if (list.isEmpty) return;
     setState(() {
       _configSending = true;
       _configError = null;
@@ -192,7 +194,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     final bindToken = const Uuid().v4();
     final phoneId = const Uuid().v4();
     PendingBindStore.setPending(bindToken, phoneId);
-    final result = await _provisioning.config(wifi: wifi, bindToken: bindToken);
+    final result = await _provisioning.config(networks: list, bindToken: bindToken);
     if (!mounted) return;
     setState(() {
       _configSending = false;
@@ -299,15 +301,17 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   return Text(l10n.t('add_wifi_first'), style: const TextStyle(color: Colors.grey));
                 }
                 return Column(
-                  children: list
-                      .map((w) => ListTile(
-                            title: Text(w.ssid),
-                            onTap: _configSending ? null : () => _sendConfig(w),
-                            trailing: _configSending
-                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                : null,
-                          ))
-                      .toList(),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ...list.map((w) => ListTile(title: Text(w.ssid))),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _configSending ? null : _sendConfigAll,
+                      child: _configSending
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(l10n.t('send_config_all')),
+                    ),
+                  ],
                 );
               },
             ),

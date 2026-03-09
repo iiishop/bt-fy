@@ -45,6 +45,8 @@ class DeviceDiscoveryService {
       if (id == null) return;
       final ip = map['ip'] as String? ?? '';
       final effectiveIp = ip.isNotEmpty && ip != '0.0.0.0' ? ip : fromIp;
+      final ssid = map['ssid'] as String?;
+      final lastSsid = (ssid != null && ssid.isNotEmpty) ? ssid : null;
       if (evt == 'binding') {
         final bindToken = map['bindToken'] as String?;
         if (bindToken != null && bindToken.isNotEmpty) {
@@ -58,6 +60,7 @@ class DeviceDiscoveryService {
         isOnline: true,
         lastSeen: DateTime.now(),
         isBound: evt == 'heartbeat',
+        lastConnectedSsid: lastSsid,
       );
       onDeviceSeen?.call(device);
     } catch (_) {}
@@ -138,6 +141,27 @@ class DeviceDiscoveryService {
   /// 接受配对（向对方 ESP 发送 pair_accepted）
   static Future<Map<String, dynamic>> acceptPair(String host, String fromDeviceId, {int port = Protocol.staTcpPort}) {
     return sendCommand(host, port, {'cmd': 'accept_pair', 'from_device_id': fromDeviceId});
+  }
+
+  /// 查询本设备当前配对对象（用于 A 端轮询是否已被 B 接受）
+  static Future<Map<String, dynamic>> getPairStatus(String host, {int port = Protocol.staTcpPort}) {
+    return sendCommand(host, port, {'cmd': 'get_pair_status'});
+  }
+
+  /// 解除配对（并可选通知对方 peer_ip）
+  static Future<Map<String, dynamic>> unpair(String host, {String? peerIp, int port = Protocol.staTcpPort}) {
+    final cmd = <String, dynamic>{'cmd': 'unpair'};
+    if (peerIp != null && peerIp.isNotEmpty) cmd['peer_ip'] = peerIp;
+    return sendCommand(host, port, cmd);
+  }
+
+  /// 同步 Flutter 中保存的 WiFi 列表到设备（每次与设备通讯时调用，使设备端表与 App 一致）
+  static Future<Map<String, dynamic>> updateWifiList(
+    String host,
+    List<Map<String, dynamic>> networks, {
+    int port = Protocol.staTcpPort,
+  }) {
+    return sendCommand(host, port, {'cmd': 'update_wifi_list', 'networks': networks});
   }
 
   // 非同一局域网配对预留：未来可通过 P2P / Tailscale 等解析 target_device_id 得到可达地址后再调用 pairRequest。

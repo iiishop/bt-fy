@@ -1,7 +1,7 @@
 //! STA 模式：UDP 广播（hello/heartbeat）+ TCP 控制服务（设计 5.2）+ 局域网配对
 
 use log::{info, warn};
-use std::io::{Read, Write};
+use std::io::{Read, Write, ErrorKind};
 use std::net::{TcpStream, SocketAddrV4, TcpListener, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -16,26 +16,31 @@ pub type BindingState = Arc<Mutex<(bool, Option<String>)>>;
 /// 配对状态：待处理列表 (from_device_id, from_ip)、已配对设备 ID
 pub type PairState = Arc<Mutex<(Vec<(String, String)>, Option<String>)>>;
 
+/// Flutter 同步的 WiFi 列表：(ssid, password, auth)。每次与 Flutter 通讯后可更新，供后续重连等使用。
+pub type WifiListStore = Arc<Mutex<Vec<(String, Option<String>, String)>>>;
+
 /// 收到配网成功（STA 已连接）时，启动 UDP 广播与 TCP 控制（各占一线程）
 pub fn spawn_sta_services_on_connect(
     device_id: String,
     sta_ip: String,
     bind_token: Option<String>,
+    sta_ssid: Option<String>,
     servo: Option<Arc<ServoService>>,
     servo2: Option<Arc<ServoService>>,
     binding_state: BindingState,
     pair_state: PairState,
+    wifi_list_store: WifiListStore,
 ) {
     let did = device_id.clone();
     let ip = sta_ip.clone();
     let binding_state_udp = Arc::clone(&binding_state);
     thread::Builder::new()
         .name("sta-udp".into())
-        .spawn(move || run_udp_broadcast(did, ip, bind_token, binding_state_udp))
+        .spawn(move || run_udp_broadcast(did, ip, bind_token, sta_ssid, binding_state_udp))
         .expect("spawn sta-udp");
     thread::Builder::new()
         .name("sta-tcp".into())
-        .spawn(move || run_tcp_control(device_id, sta_ip, servo, servo2, binding_state, pair_state))
+        .spawn(move || run_tcp_control(device_id, sta_ip, servo, servo2, binding_state, pair_state, wifi_list_store))
         .expect("spawn sta-tcp");
 }
 
@@ -45,6 +50,7 @@ fn run_udp_broadcast(
     device_id: String,
     sta_ip: String,
     bind_token: Option<String>,
+    sta_ssid: Option<String>,
     binding_state: BindingState,
 ) {
     let socket = match UdpSocket::bind("0.0.0.0:0") {
@@ -61,13 +67,18 @@ fn run_udp_broadcast(
     loop {
         let (bound, _) = *binding_state.lock().unwrap_or_else(|e| e.into_inner());
         if bound {
-            let msg = format!(r#"{{"evt":"heartbeat","id":"{}"}}"#, device_id);
-            let _ = socket.send_to(msg.as_bytes(), dest);
+            let msg = serde_json::json!({
+                "evt": "heartbeat",
+                "id": device_id,
+                "ssid": sta_ssid.as_deref().unwrap_or(""),
+            });
+            let _ = socket.send_to(msg.to_string().as_bytes(), dest);
         } else if let Some(ref token) = bind_token {
             let msg = serde_json::json!({
                 "evt": "binding",
                 "id": device_id,
                 "ip": sta_ip,
+                "ssid": sta_ssid.as_deref().unwrap_or(""),
                 "bindToken": token,
             });
             let _ = socket.send_to(msg.to_string().as_bytes(), dest);
@@ -83,6 +94,7 @@ fn run_tcp_control(
     servo2: Option<Arc<ServoService>>,
     binding_state: BindingState,
     pair_state: PairState,
+    wifi_list_store: WifiListStore,
 ) {
     let addr = format!("0.0.0.0:{}", STA_TCP_PORT);
     let listener = match TcpListener::bind(&addr) {
@@ -102,9 +114,10 @@ fn run_tcp_control(
         let servo2 = servo2.clone();
         let binding_state = Arc::clone(&binding_state);
         let pair_state = Arc::clone(&pair_state);
+        let wifi_list_store = Arc::clone(&wifi_list_store);
         let device_id = device_id.clone();
         thread::spawn(move || {
-            handle_sta_client(stream, &device_id, &servo, &servo2, &binding_state, &pair_state, peer_addr);
+            handle_sta_client(stream, &device_id, &servo, &servo2, &binding_state, &pair_state, &wifi_list_store, peer_addr);
         });
     }
 }
@@ -135,6 +148,7 @@ fn handle_sta_client(
     servo2: &Option<Arc<ServoService>>,
     binding_state: &BindingState,
     pair_state: &PairState,
+    wifi_list_store: &WifiListStore,
     peer_addr: Option<std::net::SocketAddr>,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
@@ -142,7 +156,18 @@ fn handle_sta_client(
     let line = match read_line(&mut stream) {
         Ok(s) => s,
         Err(e) => {
-            warn!("STA TCP read error: {}", e);
+            // 对方断开或 ESP 资源类错误(如 11) 时少刷 warn；128 = not connected
+            let ok_disconnect = matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+                | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof)
+                || e.raw_os_error() == Some(128);
+            let resource_err = e.raw_os_error() == Some(11); // EAGAIN / 资源暂不可用
+            if ok_disconnect {
+                info!("STA TCP client disconnected");
+            } else if resource_err {
+                info!("STA TCP read: client left or busy ({})", e);
+            } else {
+                warn!("STA TCP read error: {}", e);
+            }
             return;
         }
     };
@@ -151,7 +176,7 @@ fn handle_sta_client(
         return;
     }
     info!("STA TCP cmd: {}", if msg.len() > 80 { format!("{}...", &msg[..80]) } else { msg.to_string() });
-    let response = process_sta_command(msg, device_id, servo, servo2, binding_state, pair_state, peer_addr);
+    let response = process_sta_command(msg, device_id, servo, servo2, binding_state, pair_state, wifi_list_store, peer_addr);
     if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
         warn!("STA TCP write error");
     }
@@ -164,6 +189,7 @@ fn process_sta_command(
     servo2: &Option<Arc<ServoService>>,
     binding_state: &BindingState,
     pair_state: &PairState,
+    wifi_list_store: &WifiListStore,
     peer_addr: Option<std::net::SocketAddr>,
 ) -> String {
     let json: serde_json::Value = match serde_json::from_str(msg) {
@@ -253,6 +279,11 @@ fn process_sta_command(
                 .collect();
             serde_json::json!({"status":"ok","pending": pending}).to_string()
         }
+        "get_pair_status" => {
+            let state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let paired_with = state.1.as_deref().unwrap_or("");
+            serde_json::json!({"status":"ok","paired_with": paired_with}).to_string()
+        }
         "accept_pair" => {
             let from_device_id = json.get("from_device_id").and_then(|v| v.as_str()).unwrap_or("");
             let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
@@ -281,6 +312,60 @@ fn process_sta_command(
                 return r#"{"status":"ok"}"#.to_string();
             }
             r#"{"status":"error","reason":"missing device_id"}"#.to_string()
+        }
+        "unpair" => {
+            let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            state.1 = None;
+            state.0.clear();
+            let peer_ip = json.get("peer_ip").and_then(|v| v.as_str());
+            drop(state);
+            if let Some(ip) = peer_ip {
+                let addr = format!("{}:{}", ip, STA_TCP_PORT);
+                if let Ok(mut other) = TcpStream::connect_timeout(
+                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
+                    Duration::from_secs(5),
+                ) {
+                    let req = serde_json::json!({"cmd":"unpair_notify","device_id": device_id});
+                    let _ = writeln!(other, "{}", req);
+                    let _ = other.flush();
+                }
+            }
+            r#"{"status":"ok"}"#.to_string()
+        }
+        "unpair_notify" => {
+            if json.get("device_id").is_some() {
+                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                state.1 = None;
+                return r#"{"status":"ok"}"#.to_string();
+            }
+            r#"{"status":"error","reason":"missing device_id"}"#.to_string()
+        }
+        "update_wifi_list" => {
+            if let Some(networks) = json.get("networks").and_then(|n| n.as_array()) {
+                let list: Vec<(String, Option<String>, String)> = networks
+                    .iter()
+                    .filter_map(|n| {
+                        let obj = n.as_object()?;
+                        let ssid = obj.get("ssid").and_then(|s| s.as_str())?.to_string();
+                        let pwd = obj.get("pwd").and_then(|s| s.as_str()).map(String::from);
+                        let sec = obj.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
+                        let auth = match sec {
+                            0 => "open",
+                            1 => "wep",
+                            2 => "wpa",
+                            3 => "wpa2",
+                            4 => "wpa3",
+                            5 => "wpa2_enterprise",
+                            _ => "wpa2",
+                        };
+                        Some((ssid, pwd, auth.to_string()))
+                    })
+                    .collect();
+                let mut store = wifi_list_store.lock().unwrap_or_else(|e| e.into_inner());
+                *store = list;
+                return r#"{"status":"ok"}"#.to_string();
+            }
+            r#"{"status":"error","reason":"missing networks"}"#.to_string()
         }
         _ => r#"{"status":"error","reason":"unknown cmd"}"#.to_string(),
     }

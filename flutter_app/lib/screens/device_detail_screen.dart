@@ -6,6 +6,7 @@ import '../models/device.dart';
 import '../services/device_discovery_service.dart';
 import '../services/device_storage_service.dart';
 import '../services/discovered_devices_store.dart';
+import '../services/wifi_storage_service.dart';
 
 class DeviceDetailScreen extends StatefulWidget {
   const DeviceDetailScreen({super.key, required this.device});
@@ -18,6 +19,7 @@ class DeviceDetailScreen extends StatefulWidget {
 
 class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   final DeviceStorageService _deviceStorage = DeviceStorageService();
+  final WifiStorageService _wifiStorage = WifiStorageService();
   late Device _device;
   final _nicknameController = TextEditingController();
   final _pairTargetIdController = TextEditingController();
@@ -30,6 +32,49 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     super.initState();
     _device = widget.device;
     _nicknameController.text = _device.name;
+    _syncWifiListThenCheckPending();
+  }
+
+  /// 与设备通讯时先同步 WiFi 表、从 ESP 同步配对状态，再拉取配对请求
+  Future<void> _syncWifiListThenCheckPending() async {
+    if (_device.ipAddress.isEmpty) {
+      _checkPendingPairRequests();
+      return;
+    }
+    final list = await _wifiStorage.getAll();
+    if (list.isNotEmpty) {
+      final networks = list.map((w) => {'ssid': w.ssid, 'pwd': w.password, 'sec': w.securityType}).toList();
+      await DeviceDiscoveryService.updateWifiList(_device.ipAddress, networks);
+    }
+    if (!mounted) return;
+    final status = await DeviceDiscoveryService.getPairStatus(_device.ipAddress);
+    if (!mounted) return;
+    final pairedWith = (status['paired_with'] as String? ?? '').trim();
+    if (pairedWith.isNotEmpty) {
+      if (_device.pairedWithDeviceId != pairedWith) {
+        await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: pairedWith));
+        setState(() => _device = _device.copyWith(pairedWithDeviceId: pairedWith));
+      }
+      final peer = await _deviceStorage.getByDeviceId(pairedWith);
+      if (peer == null) {
+        final peerIp = DiscoveredDevicesStore.getIp(pairedWith) ?? '';
+        await _deviceStorage.save(Device(
+          deviceId: pairedWith,
+          name: pairedWith,
+          ipAddress: peerIp,
+          isBound: true,
+          pairedWithDeviceId: _device.deviceId,
+        ));
+      }
+    } else {
+      if (_device.pairedWithDeviceId != null) {
+        final oldPeer = _device.pairedWithDeviceId!;
+        await _deviceStorage.delete(oldPeer);
+        await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: null));
+        setState(() => _device = _device.copyWith(pairedWithDeviceId: null));
+      }
+    }
+    if (!mounted) return;
     _checkPendingPairRequests();
   }
 
@@ -144,7 +189,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               child: Text(l10n.t('save')),
             ),
           ),
-          if (d.pairedWithDeviceId != null)
+          if (d.pairedWithDeviceId != null) ...[
             ListTile(
               title: Text(l10n.t('paired')),
               subtitle: Text(d.pairedWithDeviceId!),
@@ -154,10 +199,30 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('copied_to_clipboard'))));
               },
             ),
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.link_off, size: 18),
+                label: Text(l10n.t('unpair')),
+                onPressed: _busy ? null : _unpair,
+              ),
+            ),
+          ],
           ListTile(
             title: const Text('IP'),
             subtitle: Text(d.ipAddress.isEmpty ? '—' : d.ipAddress),
           ),
+          ListTile(
+            title: Text(l10n.t('status')),
+            subtitle: Text(
+              d.isOnline ? l10n.t('currently_online') : l10n.t('last_seen', [_formatLastSeen(d.lastSeen)]),
+            ),
+          ),
+          if (d.lastConnectedSsid != null && d.lastConnectedSsid!.isNotEmpty)
+            ListTile(
+              title: Text(l10n.t('wifi')),
+              subtitle: Text(d.lastConnectedSsid!),
+            ),
           Divider(height: 24),
           Text(l10n.t('pair_section_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -271,6 +336,39 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     }
   }
 
+  Future<void> _unpair() async {
+    final l10n = AppLocalizations.maybeOf(context);
+    if (l10n == null || _device.pairedWithDeviceId == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.t('unpair_title')),
+        content: Text(l10n.t('unpair_confirm')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.t('unpair'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final peerId = _device.pairedWithDeviceId!;
+    final peer = await _deviceStorage.getByDeviceId(peerId);
+    setState(() => _busy = true);
+    await DeviceDiscoveryService.unpair(_device.ipAddress, peerIp: peer?.ipAddress);
+    if (!mounted) return;
+    await _deviceStorage.delete(peerId);
+    final updated = _device.copyWith(pairedWithDeviceId: null);
+    await _deviceStorage.save(updated);
+    setState(() {
+      _device = updated;
+      _busy = false;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('unpair'))));
+      Navigator.of(context).pop(updated);
+    }
+  }
+
   Future<void> _sendPairRequest() async {
     final l10n = AppLocalizations.maybeOf(context);
     if (l10n == null) return;
@@ -289,13 +387,136 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       return;
     }
     setState(() => _busy = true);
+    final list = await _wifiStorage.getAll();
+    if (list.isNotEmpty) {
+      final networks = list.map((w) => {'ssid': w.ssid, 'pwd': w.password, 'sec': w.securityType}).toList();
+      await DeviceDiscoveryService.updateWifiList(_device.ipAddress, networks);
+    }
+    if (!mounted) return;
     final res = await DeviceDiscoveryService.pairRequest(_device.ipAddress, targetId, targetIp);
     if (!mounted) return;
-    setState(() => _busy = false);
-    if (res['status'] == 'ok') {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('pair_request_sent'))));
-    } else {
+    if (res['status'] != 'ok') {
+      setState(() => _busy = false);
       _showError(res['reason']?.toString() ?? l10n.t('pair_request_failed'));
+      return;
     }
+    final result = await _showPairWaitingDialog(targetId);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (result == null) return;
+    final (peerId, peerIp) = result;
+    await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: peerId));
+    final peerDevice = Device(
+      deviceId: peerId,
+      name: peerId,
+      ipAddress: peerIp,
+      isBound: true,
+      pairedWithDeviceId: _device.deviceId,
+    );
+    await _deviceStorage.save(peerDevice);
+    DiscoveredDevicesStore.update(peerId, peerIp);
+    setState(() => _device = _device.copyWith(pairedWithDeviceId: peerId));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('pair_success'))));
+  }
+
+  Future<(String, String)?> _showPairWaitingDialog(String targetId) async {
+    final l10n = AppLocalizations.of(context);
+    final targetIp = DiscoveredDevicesStore.getIp(targetId) ?? '';
+    final myDeviceIp = _device.ipAddress;
+    final result = await showDialog<(String, String)?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PairWaitingDialog(
+        targetId: targetId,
+        targetIp: targetIp,
+        myDeviceIp: myDeviceIp,
+      ),
+    );
+    if (result == null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('pair_expired_or_rejected'))),
+      );
+    }
+    return result;
+  }
+
+  static String _formatLastSeen(DateTime t) {
+    final now = DateTime.now();
+    if (t.year == now.year && t.month == now.month && t.day == now.day) {
+      return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    }
+    return '${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _PairWaitingDialog extends StatefulWidget {
+  const _PairWaitingDialog({
+    required this.targetId,
+    required this.targetIp,
+    required this.myDeviceIp,
+  });
+
+  final String targetId;
+  final String targetIp;
+  final String myDeviceIp;
+
+  @override
+  State<_PairWaitingDialog> createState() => _PairWaitingDialogState();
+}
+
+class _PairWaitingDialogState extends State<_PairWaitingDialog> {
+  static const _pollInterval = Duration(seconds: 2);
+  static const _timeout = Duration(seconds: 90);
+  DateTime? _deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    _deadline = DateTime.now().add(_timeout);
+    _poll();
+  }
+
+  Future<void> _poll() async {
+    while (mounted && _deadline != null && DateTime.now().isBefore(_deadline!)) {
+      await Future.delayed(_pollInterval);
+      if (!mounted) return;
+      final status = await DeviceDiscoveryService.getPairStatus(widget.myDeviceIp);
+      if (!mounted) return;
+      final pairedWith = status['paired_with'] as String? ?? '';
+      if (pairedWith == widget.targetId) {
+        if (mounted) Navigator.of(context).pop((widget.targetId, widget.targetIp));
+        return;
+      }
+    }
+    if (mounted) Navigator.of(context).pop<(String, String)?>(null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.t('pair_waiting_title')),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          Text(l10n.t('pair_waiting_message', [widget.targetId])),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop<(String, String)?>(null),
+          child: Text(l10n.t('cancel')),
+        ),
+      ],
+    );
   }
 }

@@ -50,22 +50,25 @@ class DeviceProvisioningService {
     }
   }
 
-  /// 发送 Wi-Fi 配置；发完即关闭，不等待 STA 连上。手机可立即切回原 WiFi，设备连上后会持续发 binding，手机监听到后回信完成绑定。
+  /// 发送已保存的全部 Wi-Fi 列表；设备按信号强度选最佳连接。发完即关闭，手机可切回原 WiFi，设备连上后发 binding 完成绑定。
   Future<Map<String, dynamic>> config({
-    required WifiNetwork wifi,
+    required List<WifiNetwork> networks,
     String? bindToken,
     String host = Protocol.deviceApGateway,
     int port = Protocol.apTcpPort,
   }) async {
+    if (networks.isEmpty) return {'status': 'error', 'reason': 'No networks'};
     try {
       final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 8));
       try {
-        final sec = wifi.securityType;
+        final list = networks.map((w) => {
+          'ssid': w.ssid,
+          'pwd': w.password,
+          'sec': w.securityType,
+        }).toList();
         final body = <String, dynamic>{
           'cmd': 'config',
-          'ssid': wifi.ssid,
-          'pwd': wifi.password,
-          'sec': sec,
+          'networks': list,
         };
         if (bindToken != null && bindToken.isNotEmpty) body['phone'] = bindToken;
         socket.write('${jsonEncode(body)}\n');

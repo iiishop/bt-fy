@@ -9,8 +9,8 @@ use std::net::Ipv4Addr;
 /// All services (DNS, HTTP) run on this IP
 pub const AP_IP_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 71, 1);
 
-/// WiFi SSID prefix; actual SSID is "{prefix}{MAC suffix}", e.g. ESP_A1B2C3D4（与 App 发现约定一致）
-pub const WIFI_SSID_PREFIX: &str = "ESP_";
+/// WiFi SSID prefix; actual SSID is "{prefix}{MAC suffix}", e.g. BF_A1B2C3D4（与 App 发现约定一致）
+pub const WIFI_SSID_PREFIX: &str = "BF_";
 
 /// WiFi channel
 pub const WIFI_CHANNEL: u8 = 1;
@@ -60,3 +60,16 @@ pub const SERVO_ANGLE_MAX: u16 = 300;
 /// DS-S006L pulse range in microseconds
 pub const SERVO_PULSE_MIN_US: u32 = 500;
 pub const SERVO_PULSE_MAX_US: u32 = 2500;
+
+// ========================================
+// VL53L0X 距离触发舵机（test-mode）
+// ========================================
+
+/// 距离 < 此值(mm) 时开始挥动
+pub const TOF_THRESHOLD_START_MM: u16 = 110;
+/// 距离 ≤ 此值(mm) 时用较快周期（舵机最快速度）
+pub const TOF_THRESHOLD_FAST_MM: u16 = 60;
+/// 刚触发时的周期（ms），一整圈 25°↔130°↔25°
+pub const TOF_PERIOD_SLOW_MS: u64 = 2000;
+/// 较快周期（≤60mm 时），越小越快
+pub const TOF_PERIOD_FAST_MS: u64 = 300;

@@ -16,6 +16,9 @@ use crate::system::config::{AP_IP_ADDRESS, SUBNET_MASK, WIFI_CHANNEL, WIFI_SSID_
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// One network entry for ConnectFromList (ssid, password, auth string)
+pub type NetworkEntry = (String, Option<String>, String);
+
 /// WiFi command sent from HTTP handlers to main thread
 #[derive(Debug)]
 pub enum WifiCommand {
@@ -26,6 +29,8 @@ pub enum WifiCommand {
         username: Option<String>,
         auth: String,
     },
+    /// Connect using best RSSI from the given list (from Flutter saved WiFis)
+    ConnectFromList(Vec<NetworkEntry>),
     GetStatus,
     StopAp,
 }
@@ -194,7 +199,7 @@ impl WifiService {
         Ok(())
     }
 
-    /// AP SSID (with MAC suffix), e.g. ESP_A1B2C3D4
+    /// AP SSID (with MAC suffix), e.g. BF_A1B2C3D4
     pub fn ap_ssid(&self) -> &str {
         self.ap_config.ssid.as_str()
     }
@@ -222,6 +227,7 @@ impl WifiService {
                 username: _,
                 auth,
             } => self.do_connect(ssid, password, auth),
+            WifiCommand::ConnectFromList(list) => self.do_connect_from_list(list),
             WifiCommand::GetStatus => self.do_status(),
             WifiCommand::StopAp => self.do_stop_ap(),
         }
@@ -296,6 +302,35 @@ impl WifiService {
             }
         }
         WifiResponse::Connect(Err("DHCP timeout (no IP)".to_string()))
+    }
+
+    /// Scan, match networks to scan results by SSID, sort by RSSI (strongest first), try connect until one succeeds.
+    fn do_connect_from_list(&mut self, list: Vec<NetworkEntry>) -> WifiResponse {
+        if list.is_empty() {
+            return WifiResponse::Connect(Err("Empty network list".to_string()));
+        }
+        let scan_result = match self.do_scan() {
+            WifiResponse::Scan(entries) => entries,
+            _ => return WifiResponse::Connect(Err("Scan failed".to_string())),
+        };
+        let mut with_rssi: Vec<(String, Option<String>, String, i8)> = list
+            .into_iter()
+            .filter_map(|(ssid, pwd, auth)| {
+                let rssi = scan_result.iter().find(|e| e.ssid == ssid).map(|e| e.rssi)?;
+                Some((ssid, pwd, auth, rssi))
+            })
+            .collect();
+        with_rssi.sort_by(|a, b| b.3.cmp(&a.3));
+        if with_rssi.is_empty() {
+            return WifiResponse::Connect(Err("No listed network in scan range".to_string()));
+        }
+        for (ssid, password, auth, _) in with_rssi {
+            let res = self.do_connect(ssid.clone(), password.clone(), auth.clone());
+            if let WifiResponse::Connect(Ok(_)) = res {
+                return res;
+            }
+        }
+        WifiResponse::Connect(Err("All networks failed".to_string()))
     }
 
     fn do_status(&mut self) -> WifiResponse {

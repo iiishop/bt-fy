@@ -32,10 +32,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ipAddress: newIp,
             lastSeen: device.lastSeen,
             isOnline: true,
+            lastConnectedSsid: device.lastConnectedSsid ?? _devices[i].lastConnectedSsid,
           );
           _deviceStorage.save(_devices[i]);
         } else {
-          _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
+          if (!device.isBound) {
+            _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
+          }
         }
         DiscoveredDevicesStore.update(device.deviceId, device.ipAddress);
       });
@@ -137,13 +140,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final d = _devices[index];
+                        final statusText = d.isOnline
+                            ? l10n.t('currently_online')
+                            : l10n.t('last_seen', [_formatLastSeen(d.lastSeen)]);
+                        final wifiText = (d.lastConnectedSsid != null && d.lastConnectedSsid!.isNotEmpty)
+                            ? ' · ${l10n.t('wifi')}: ${d.lastConnectedSsid}'
+                            : '';
                         return ListTile(
                           leading: Icon(
                             d.isOnline ? Icons.check_circle : Icons.offline_bolt,
                             color: d.isOnline ? Colors.green : Colors.grey,
                           ),
                           title: Text(d.name),
-                          subtitle: Text(d.ipAddress.isEmpty ? d.deviceId : '${d.ipAddress} · ${d.deviceId}'),
+                          subtitle: Text(
+                            (d.ipAddress.isEmpty ? d.deviceId : '${d.ipAddress} · ${d.deviceId}') +
+                                '\n$statusText$wifiText',
+                          ),
+                          isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
                             final updated = await Navigator.push<Device>(
@@ -229,5 +242,14 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => const AddDeviceScreen()),
     );
     _loadDevices();
+  }
+
+  static String _formatLastSeen(DateTime t) {
+    final now = DateTime.now();
+    if (t.year == now.year && t.month == now.month && t.day == now.day) {
+      return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    }
+    return '${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 }
