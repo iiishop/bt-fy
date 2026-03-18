@@ -13,6 +13,7 @@ use std::thread;
 use std::time::Duration;
 use vl53l0x::VL53L0x;
 
+use crate::hardware::TofSensor;
 use crate::system::config::{VL53L0X_I2C_FREQUENCY, VL53L0X_SCL_PIN, VL53L0X_SDA_PIN};
 
 /// VL53L0X sensor service
@@ -87,6 +88,12 @@ impl VL53L0XService {
             error!("Failed to lock distance: {}", e);
             0
         })
+    }
+}
+
+impl TofSensor for VL53L0XService {
+    fn get_distance(&self) -> u16 {
+        VL53L0XService::get_distance(self)
     }
 }
 

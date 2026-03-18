@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::{
     dns::DnsService,
-    hardware::{ServoService, VL53L0XService},
+    hardware::{self, ContinuousServoService, vl53l1x::VL53L1XService, ServoService, TofSensor, VL53L0XService},
     protocol::{spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PairState, PendingBindToken, PendingConfigDone, SyncRunning, TriggerState, WifiListStore},
     system::config::{
         AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN,
@@ -47,9 +47,9 @@ pub struct ButterflySystem {
     wifi_cmd_rx: Option<mpsc::Receiver<(WifiCommand, mpsc::Sender<WifiResponse>)>>,
     dns: DnsService,
     web: WebService,
-    sensor: Option<Arc<VL53L0XService>>,
+    sensor: Option<Arc<dyn TofSensor>>,
     servo: Option<Arc<ServoService>>,
-    servo2: Option<Arc<ServoService>>,
+    servo2: Option<Arc<ContinuousServoService>>,
 }
 
 impl ButterflySystem {
@@ -106,19 +106,15 @@ impl ButterflySystem {
     /// Order: TOF first (I2C + background thread), then LEDC timer and servos, so I2C is stable.
     fn try_init_hardware(
         peripherals: &mut Peripherals,
-    ) -> (
-        Option<Arc<VL53L0XService>>,
-        Option<Arc<ServoService>>,
-        Option<Arc<ServoService>>,
-    ) {
+    ) -> (Option<Arc<dyn TofSensor>>, Option<Arc<ServoService>>, Option<Arc<ContinuousServoService>>) {
         // 1) Init VL53L0X first so I2C and its reading thread start before any LEDC/GPIO3/4 activity
-        let sensor = {
+        let sensor: Option<Arc<dyn TofSensor>> = {
             info!("Initializing VL53L0X sensor...");
 
-            let i2c_driver = match crate::hardware::vl53l0x::create_i2c_driver(
+            let i2c_driver = match hardware::vl53l0x::create_i2c_driver(
                 unsafe { peripherals.i2c0.clone_unchecked() },
-                unsafe { peripherals.pins.gpio6.clone_unchecked() },
-                unsafe { peripherals.pins.gpio7.clone_unchecked() },
+                unsafe { peripherals.pins.gpio5.clone_unchecked() }, // SDA
+                unsafe { peripherals.pins.gpio2.clone_unchecked() }, // SCL
             ) {
                 Ok(driver) => driver,
                 Err(e) => {
@@ -130,11 +126,33 @@ impl ButterflySystem {
             match VL53L0XService::new(i2c_driver) {
                 Ok(service) => {
                     info!("VL53L0X sensor ready");
-                    Some(Arc::new(service))
+                    Some(Arc::new(service) as Arc<dyn TofSensor>)
                 }
                 Err(e) => {
                     log::warn!("VL53L0X sensor init failed: {}", e);
-                    None
+                    // 尝试 VL53L1X 作为 fallback
+                    log::warn!("Trying VL53L1X sensor as fallback...");
+                    let i2c_driver_l1 = match hardware::vl53l1x::create_i2c_driver(
+                        unsafe { peripherals.i2c0.clone_unchecked() },
+                        unsafe { peripherals.pins.gpio5.clone_unchecked() },
+                        unsafe { peripherals.pins.gpio2.clone_unchecked() },
+                    ) {
+                        Ok(driver) => driver,
+                        Err(e2) => {
+                            log::warn!("VL53L1X I2C init failed: {}", e2);
+                            return (None, None, None);
+                        }
+                    };
+                    match VL53L1XService::new(i2c_driver_l1) {
+                        Ok(service) => {
+                            info!("VL53L1X sensor ready");
+                            Some(Arc::new(service) as Arc<dyn TofSensor>)
+                        }
+                        Err(e2) => {
+                            log::warn!("VL53L1X sensor init failed: {}", e2);
+                            None
+                        }
+                    }
                 }
             }
         };
@@ -188,11 +206,11 @@ impl ButterflySystem {
     fn try_init_servo2<T>(
         peripherals: &mut Peripherals,
         timer: &'static LedcTimerDriver<'static, T>,
-    ) -> Option<Arc<ServoService>>
+    ) -> Option<Arc<ContinuousServoService>>
     where
         T: ledc::LedcTimer<SpeedMode = LowSpeed> + 'static,
     {
-        match ServoService::new_with_shared_timer(
+        match ContinuousServoService::new_with_shared_timer(
             unsafe { peripherals.ledc.channel1.clone_unchecked() },
             timer,
             unsafe { peripherals.pins.gpio4.clone_unchecked() },

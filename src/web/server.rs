@@ -398,7 +398,7 @@ fn parse_angle(payload: &str) -> Option<u16> {
         return None;
     }
 
-    digits.parse::<u16>().ok().map(|n| n.min(300))
+    digits.parse::<u16>().ok()
 }
 
 fn wifi_scan_json(list: &[ApEntry]) -> String {

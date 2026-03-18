@@ -38,6 +38,8 @@ esp-idf-hal = "0.45"
 heapless = "0.8"
 anyhow = "1.0"
 vl53l0x = "1.0"
+vl53l1x-uld = "2"
+embedded-hal = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

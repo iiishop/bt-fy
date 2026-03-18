@@ -208,8 +208,8 @@
                 <span class="label">Angle (live update)</span>
                 <span class="slider-live" id="servo2Live">90°</span>
             </div>
-            <input id="servo2Control" type="range" min="0" max="300" step="1" value="90">
-            <div class="hint">Range: 0° - 300°. DS-S006L on GPIO4.</div>
+            <input id="servo2Control" type="range" min="0" max="180" step="1" value="90">
+            <div class="hint">Range: 0° - 180°. DS-S006L continuous on GPIO4 (90 stop).</div>
         </div>
     </section>
 
@@ -262,8 +262,8 @@
     }
 
     function updateServo2Visual(angle) {
-        const clamped = Math.max(0, Math.min(300, Number(angle) || 0));
-        servo2ControlEl.style.setProperty("--fill", (clamped / 3) + "%");
+        const clamped = Math.max(0, Math.min(180, Number(angle) || 0));
+        servo2ControlEl.style.setProperty("--fill", (clamped / 180) * 100 + "%");
         servo2ControlEl.value = clamped;
         servo2LiveEl.textContent = clamped + "\u00b0";
     }

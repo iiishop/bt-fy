@@ -38,11 +38,11 @@ pub const SUBNET_MASK: u8 = 24;
 // Hardware Configuration
 // ========================================
 
-/// VL53L0X I2C SDA pin (GPIO6 / D4 on board)
-pub const VL53L0X_SDA_PIN: u8 = 6;
+/// VL53L0X I2C SDA pin (GPIO5)
+pub const VL53L0X_SDA_PIN: u8 = 5;
 
-/// VL53L0X I2C SCL pin (GPIO7 / D5 on board)
-pub const VL53L0X_SCL_PIN: u8 = 7;
+/// VL53L0X I2C SCL pin (GPIO2)
+pub const VL53L0X_SCL_PIN: u8 = 2;
 
 /// I2C frequency for VL53L0X (400kHz = fast mode)
 pub const VL53L0X_I2C_FREQUENCY: u32 = 400_000;
@@ -56,6 +56,16 @@ pub const SERVO2_PIN: u8 = 4;
 /// DS-S006L angle range
 pub const SERVO_ANGLE_MIN: u16 = 0;
 pub const SERVO_ANGLE_MAX: u16 = 300;
+
+/// DS-S006L (servo2) continuous-rotation command range.
+///
+/// Convention:
+/// - cmd == SERVO2_CMD_NEUTRAL => stop
+/// - cmd > neutral => forward, farther => faster
+/// - cmd < neutral => reverse, farther => faster
+pub const SERVO2_CMD_MIN: u16 = 0;
+pub const SERVO2_CMD_NEUTRAL: u16 = 90;
+pub const SERVO2_CMD_MAX: u16 = 180;
 
 /// DS-S006L pulse range in microseconds
 pub const SERVO_PULSE_MIN_US: u32 = 500;

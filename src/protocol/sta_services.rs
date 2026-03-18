@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::hardware::ServoService;
-use crate::system::config::{STA_TCP_PORT, STA_UDP_PORT};
+use crate::hardware::{ContinuousServoService, ServoService};
+use crate::system::config::{STA_TCP_PORT, STA_UDP_PORT, SERVO2_CMD_NEUTRAL};
 
 /// 绑定状态：是否已绑定、绑定的手机 ID
 pub type BindingState = Arc<Mutex<(bool, Option<String>)>>;
@@ -32,7 +32,7 @@ pub fn spawn_sta_services_on_connect(
     bind_token: Option<String>,
     sta_ssid: Option<String>,
     servo: Option<Arc<ServoService>>,
-    servo2: Option<Arc<ServoService>>,
+    servo2: Option<Arc<ContinuousServoService>>,
     binding_state: BindingState,
     pair_state: PairState,
     trigger_state: TriggerState,
@@ -99,7 +99,7 @@ fn run_tcp_control(
     device_id: String,
     _sta_ip: String,
     servo: Option<Arc<ServoService>>,
-    servo2: Option<Arc<ServoService>>,
+    servo2: Option<Arc<ContinuousServoService>>,
     binding_state: BindingState,
     pair_state: PairState,
     trigger_state: TriggerState,
@@ -157,7 +157,7 @@ fn handle_sta_client(
     mut stream: TcpStream,
     device_id: &str,
     servo: &Option<Arc<ServoService>>,
-    servo2: &Option<Arc<ServoService>>,
+    servo2: &Option<Arc<ContinuousServoService>>,
     binding_state: &BindingState,
     pair_state: &PairState,
     trigger_state: &TriggerState,
@@ -200,7 +200,7 @@ fn process_sta_command(
     msg: &str,
     device_id: &str,
     servo: &Option<Arc<ServoService>>,
-    servo2: &Option<Arc<ServoService>>,
+    servo2: &Option<Arc<ContinuousServoService>>,
     binding_state: &BindingState,
     pair_state: &PairState,
     trigger_state: &TriggerState,
@@ -224,13 +224,22 @@ fn process_sta_command(
         "move_servo" => {
             let idx = json.get("servo").and_then(|n| n.as_u64()).unwrap_or(0);
             let angle = json.get("angle").and_then(|n| n.as_u64()).unwrap_or(90) as u16;
-            let s = if idx == 0 { servo.as_ref() } else { servo2.as_ref() };
-            match s {
-                Some(s) => match s.set_angle(angle.min(300)) {
-                    Ok(()) => r#"{"status":"ok"}"#.to_string(),
-                    Err(e) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
-                },
-                None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+            if idx == 0 {
+                match servo.as_ref() {
+                    Some(s) => match s.set_angle(angle.min(300)) {
+                        Ok(()) => r#"{"status":"ok"}"#.to_string(),
+                        Err(e) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
+                    },
+                    None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+                }
+            } else {
+                match servo2.as_ref() {
+                    Some(s) => match s.set_angle(angle.min(180)) {
+                        Ok(()) => r#"{"status":"ok"}"#.to_string(),
+                        Err(e) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
+                    },
+                    None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+                }
             }
         }
         "bind" => {
@@ -308,13 +317,18 @@ fn process_sta_command(
             serde_json::json!({"status":"ok","paired_with": paired_with, "triggered_count": trig.1}).to_string()
         }
         "sync_tick" => {
-            // A 触发时每 tick 发来 phase，B 的 servo0 与 A 完全同步；首次进入时 servo1 +2° 与计数（防抖 5s）
+            // A 触发时每 tick 发来 phase，B 的 servo1 与 A 基本同步。
+            //
+            // B 的 servo2（连续旋转舵机）规则：
+            // - 当距离上一次 servo2“启动旋转”超过 10s 时（或初始时），执行一次：
+            //   cmd=120 旋转 0.4s，然后回到 cmd=90（停止）
+            // - 在 10s 窗口内无效（无论 A 是否短促/持续触发），超过 10s 则再次触发
             const ANGLE_MIN: u16 = 25;
             const ANGLE_MAX: u16 = 130;
             const SPAN: u16 = 105;
-            const DEBOUNCE_MS: u64 = 5000;
-            const SERVO1_STEP: u16 = 2;
-            const SERVO1_MAX: u16 = 300;
+            const SERVO2_ROTATE_CMD: u16 = 120; // 暂定“速度值”
+            const SERVO2_ROTATE_DURATION_MS: u64 = 400;
+            const SERVO2_ROTATE_INTERVAL_MS: u64 = 10_000;
             let phase = json.get("phase").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
             let angle0 = if phase < 1.0 {
                 ANGLE_MAX - (SPAN as f32 * phase) as u16
@@ -324,31 +338,46 @@ fn process_sta_command(
             if let Some(s0) = servo.as_ref() {
                 let _ = s0.set_angle(angle0);
             }
-            let mut run = sync_running.lock().unwrap_or_else(|e| e.into_inner());
-            if !*run {
+            // 保持同步状态标记：用于外部理解/调试
+            {
+                let mut run = sync_running.lock().unwrap_or_else(|e| e.into_inner());
                 *run = true;
-                drop(run);
-                if let Some(s1) = servo2.as_ref() {
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    let mut trig = trigger_state.lock().unwrap_or_else(|e| e.into_inner());
-                    let count_new = now_ms.saturating_sub(trig.0) > DEBOUNCE_MS;
-                    if count_new {
-                        trig.0 = now_ms;
-                        trig.1 = trig.1.saturating_add(1);
-                        let current = s1.get_angle();
-                        let next = if current + SERVO1_STEP >= SERVO1_MAX { 0 } else { current + SERVO1_STEP };
-                        let _ = s1.set_angle(next);
-                    }
+            }
+
+            // servo2 rotation scheduler
+            if let Some(s1) = servo2.as_ref() {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let mut trig = trigger_state.lock().unwrap_or_else(|e| e.into_inner());
+                let should_rotate = now_ms.saturating_sub(trig.0) >= SERVO2_ROTATE_INTERVAL_MS;
+                if should_rotate {
+                    trig.0 = now_ms;
+                    trig.1 = trig.1.saturating_add(1);
+
+                    // Spawn a short, non-blocking rotation task.
+                    let s1_for_task = s1.clone();
+                    std::thread::spawn(move || {
+                        let _ = s1_for_task.set_angle(SERVO2_ROTATE_CMD);
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            SERVO2_ROTATE_DURATION_MS,
+                        ));
+                        let _ = s1_for_task.set_angle(SERVO2_CMD_NEUTRAL);
+                    });
                 }
             }
             r#"{"status":"ok"}"#.to_string()
         }
         "sync_stop" => {
             if let Some(s0) = servo.as_ref() {
-                let _ = s0.set_angle(130); // 与 A 侧 idle 一致
+                // 停止时根据“离 25° 还是 130°更近”就近停靠
+                let current = s0.get_angle();
+                let d25 = (current as i32 - 25).abs() as u16;
+                let d130 = (current as i32 - 130).abs() as u16;
+                let idle_angle = if d25 <= d130 { 25 } else { 130 };
+                let _ = s0.set_angle(idle_angle);
             }
             let mut run = sync_running.lock().unwrap_or_else(|e| e.into_inner());
             *run = false;
