@@ -1,14 +1,18 @@
 //! STA 模式：UDP 广播（hello/heartbeat）+ TCP 控制服务（设计 5.2）+ 局域网配对
 
 use log::{info, warn};
-use std::io::{Read, Write, ErrorKind};
-use std::net::{TcpStream, SocketAddrV4, TcpListener, UdpSocket};
-use std::sync::{Arc, Mutex};
+use std::io::{ErrorKind, Read, Write};
+use std::net::{Shutdown, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
 
 use crate::hardware::{ContinuousServoService, ServoService};
-use crate::system::config::{STA_TCP_PORT, STA_UDP_PORT, SERVO2_CMD_NEUTRAL};
+use crate::system::config::{
+    STA_TCP_PORT, STA_UDP_PORT, SERVO2_CMD_NEUTRAL, TOF_PERIOD_FAST_MS, TOF_PERIOD_SLOW_MS,
+    TOF_THRESHOLD_FAST_MM, TOF_THRESHOLD_START_MM,
+};
 
 /// 绑定状态：是否已绑定、绑定的手机 ID
 pub type BindingState = Arc<Mutex<(bool, Option<String>)>>;
@@ -19,11 +23,32 @@ pub type PairState = Arc<Mutex<(Vec<(String, String)>, Option<String>, Option<St
 /// 被 pair 设备远程触发的防抖与计数：(last_trigger_time_ms, triggered_count)
 pub type TriggerState = Arc<Mutex<(u64, u32)>>;
 
-/// B 端是否正在接收 A 的 sync_tick（用于 sync_stop 后首次 sync_tick 做 servo1+2 与计数）
+/// B 端是否正在接收 A 的同步触发（用于 servo1/servo2 同步线程的启动/停止）
 pub type SyncRunning = Arc<Mutex<bool>>;
 
 /// Flutter 同步的 WiFi 列表：(ssid, password, auth)。每次与 Flutter 通讯后可更新，供后续重连等使用。
 pub type WifiListStore = Arc<Mutex<Vec<(String, Option<String>, String)>>>;
+
+fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            warn!("mutex '{}' poisoned, continue with inner value", name);
+            e.into_inner()
+        }
+    }
+}
+
+fn error_response(code: &str, message: &str) -> String {
+    serde_json::json!({
+        "status": "error",
+        "code": code,
+        "message": message,
+        // backward compatibility for old clients that only parse `reason`
+        "reason": code,
+    })
+    .to_string()
+}
 
 /// 收到配网成功（STA 已连接）时，启动 UDP 广播与 TCP 控制（各占一线程）
 pub fn spawn_sta_services_on_connect(
@@ -69,11 +94,9 @@ fn run_udp_broadcast(
         }
     };
     let _ = socket.set_broadcast(true);
-    let dest: SocketAddrV4 = format!("255.255.255.255:{}", STA_UDP_PORT)
-        .parse()
-        .unwrap_or_else(|_| "255.255.255.255:12345".parse().unwrap());
+    let dest: SocketAddrV4 = SocketAddrV4::new(std::net::Ipv4Addr::new(255, 255, 255, 255), STA_UDP_PORT);
     loop {
-        let (bound, _) = *binding_state.lock().unwrap_or_else(|e| e.into_inner());
+        let (bound, _) = *lock_or_recover(binding_state.as_ref(), "binding_state");
         if bound {
             let msg = serde_json::json!({
                 "evt": "heartbeat",
@@ -115,21 +138,55 @@ fn run_tcp_control(
         }
     };
     info!("STA TCP control on {}", addr);
+    let active_clients = Arc::new(AtomicUsize::new(0));
+    const MAX_ACTIVE_CLIENTS: usize = 6;
     for stream in listener.incoming().filter_map(Result::ok) {
         let peer_addr = stream.peer_addr().ok();
         if let Some(ref peer) = peer_addr {
             info!("STA TCP client connected from {}", peer);
         }
+        let cur = active_clients.load(AtomicOrdering::Relaxed);
+        if cur >= MAX_ACTIVE_CLIENTS {
+            // Too many connections; drop this one to avoid OOM/thread explosion.
+            warn!("STA TCP too many active clients ({}), dropping connection", cur);
+            let mut s = stream;
+            let _ = writeln!(
+                s,
+                "{}",
+                error_response("busy", "too_many_connections")
+            );
+            let _ = s.flush();
+            let _ = s.shutdown(Shutdown::Both);
+            continue;
+        }
+
         let servo = servo.clone();
         let servo2 = servo2.clone();
         let binding_state = Arc::clone(&binding_state);
         let pair_state = Arc::clone(&pair_state);
         let wifi_list_store = Arc::clone(&wifi_list_store);
-        let device_id = device_id.clone();
         let trigger_state = Arc::clone(&trigger_state);
         let sync_running = Arc::clone(&sync_running);
-        thread::spawn(move || {
-            handle_sta_client(stream, &device_id, &servo, &servo2, &binding_state, &pair_state, &trigger_state, &sync_running, &wifi_list_store, peer_addr);
+        let device_id = device_id.clone();
+        let active_clients = Arc::clone(&active_clients);
+        let _ = thread::Builder::new()
+            .name("sta-client".into())
+            .stack_size(64 * 1024)
+            .spawn(move || {
+            active_clients.fetch_add(1, AtomicOrdering::Relaxed);
+            let _ = handle_sta_client(
+                stream,
+                &device_id,
+                &servo,
+                &servo2,
+                &binding_state,
+                &pair_state,
+                &trigger_state,
+                &sync_running,
+                &wifi_list_store,
+                peer_addr,
+            );
+            active_clients.fetch_sub(1, AtomicOrdering::Relaxed);
         });
     }
 }
@@ -139,7 +196,11 @@ fn read_line(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
     let mut line = Vec::new();
     let mut buf = [0u8; 1];
     loop {
-        let n = stream.read(&mut buf)?;
+        let n = match stream.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) if e.kind() == ErrorKind::TimedOut => continue,
+            Err(e) => return Err(e),
+        };
         if n == 0 {
             break;
         }
@@ -167,32 +228,57 @@ fn handle_sta_client(
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-    let line = match read_line(&mut stream) {
-        Ok(s) => s,
-        Err(e) => {
-            // 对方断开或 ESP 资源类错误(如 11) 时少刷 warn；128 = not connected
-            let ok_disconnect = matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
-                | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof)
-                || e.raw_os_error() == Some(128);
-            let resource_err = e.raw_os_error() == Some(11); // EAGAIN / 资源暂不可用
-            if ok_disconnect {
-                info!("STA TCP client disconnected");
-            } else if resource_err {
-                info!("STA TCP read: client left or busy ({})", e);
-            } else {
-                warn!("STA TCP read error: {}", e);
+    loop {
+        let line = match read_line(&mut stream) {
+            Ok(s) => s,
+            Err(e) => {
+                // 对方断开或 ESP 资源类错误(如 11) 时少刷 warn；128 = not connected
+                let ok_disconnect = matches!(
+                    e.kind(),
+                    ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::BrokenPipe
+                        | ErrorKind::UnexpectedEof
+                ) || e.raw_os_error() == Some(128);
+                let resource_err = e.raw_os_error() == Some(11); // EAGAIN / 资源暂不可用
+                if ok_disconnect {
+                    info!("STA TCP client disconnected");
+                } else if resource_err {
+                    info!("STA TCP read: client left or busy ({})", e);
+                } else {
+                    warn!("STA TCP read error: {}", e);
+                }
+                return;
             }
+        };
+
+        let msg = line.trim();
+        if msg.is_empty() {
+            continue;
+        }
+
+        info!(
+            "STA TCP cmd: {}",
+            if msg.len() > 80 {
+                format!("{}...", &msg[..80])
+            } else {
+                msg.to_string()
+            }
+        );
+        let response = process_sta_command(
+            msg,
+            device_id,
+            servo,
+            servo2,
+            binding_state,
+            pair_state,
+            trigger_state,
+            sync_running,
+            wifi_list_store,
+            peer_addr,
+        );
+        if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
+            warn!("STA TCP write error");
             return;
         }
-    };
-    let msg = line.trim();
-    if msg.is_empty() {
-        return;
-    }
-    info!("STA TCP cmd: {}", if msg.len() > 80 { format!("{}...", &msg[..80]) } else { msg.to_string() });
-    let response = process_sta_command(msg, device_id, servo, servo2, binding_state, pair_state, trigger_state, sync_running, wifi_list_store, peer_addr);
-    if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
-        warn!("STA TCP write error");
     }
 }
 
@@ -210,15 +296,18 @@ fn process_sta_command(
 ) -> String {
     let json: serde_json::Value = match serde_json::from_str(msg) {
         Ok(j) => j,
-        Err(_) => return r#"{"status":"error","reason":"invalid json"}"#.to_string(),
+        Err(_) => return error_response("invalid_json", "invalid json"),
     };
     let cmd = json.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
     match cmd {
         "demo_servo" => {
-            match servo.as_ref().map(|s| s.demo_sequence()) {
-                Some(Ok(())) => r#"{"status":"ok"}"#.to_string(),
-                Some(Err(e)) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
-                None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+            if let Some(s) = servo {
+                match s.demo_sequence() {
+                    Ok(()) => r#"{"status":"ok"}"#.to_string(),
+                    Err(e) => error_response("servo_error", &e.to_string()),
+                }
+            } else {
+                error_response("servo_unavailable", "servo unavailable")
             }
         }
         "move_servo" => {
@@ -228,17 +317,17 @@ fn process_sta_command(
                 match servo.as_ref() {
                     Some(s) => match s.set_angle(angle.min(300)) {
                         Ok(()) => r#"{"status":"ok"}"#.to_string(),
-                        Err(e) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
+                        Err(e) => error_response("servo_error", &e.to_string()),
                     },
-                    None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+                    None => error_response("servo_unavailable", "servo unavailable"),
                 }
             } else {
                 match servo2.as_ref() {
                     Some(s) => match s.set_angle(angle.min(180)) {
                         Ok(()) => r#"{"status":"ok"}"#.to_string(),
-                        Err(e) => format!(r#"{{"status":"error","reason":"{}"}}"#, e),
+                        Err(e) => error_response("servo_error", &e.to_string()),
                     },
-                    None => r#"{"status":"error","reason":"servo unavailable"}"#.to_string(),
+                    None => error_response("servo_unavailable", "servo unavailable"),
                 }
             }
         }
@@ -248,12 +337,12 @@ fn process_sta_command(
                 .and_then(|p| p.as_str())
                 .unwrap_or("")
                 .to_string();
-            let mut state = binding_state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = lock_or_recover(binding_state.as_ref(), "binding_state");
             *state = (true, Some(phone));
             r#"{"status":"ok"}"#.to_string()
         }
         "unbind" => {
-            let mut state = binding_state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = lock_or_recover(binding_state.as_ref(), "binding_state");
             *state = (false, None);
             r#"{"status":"ok"}"#.to_string()
         }
@@ -263,10 +352,13 @@ fn process_sta_command(
                 json.get("target_device_id").and_then(|v| v.as_str()),
             ) {
                 let addr = format!("{}:{}", target_ip, STA_TCP_PORT);
-                if let Ok(mut other) = TcpStream::connect_timeout(
-                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
-                    Duration::from_secs(5),
-                ) {
+                let parsed_addr = match addr.parse() {
+                    Ok(a) => a,
+                    Err(_) => {
+                        return error_response("invalid_target_addr", "invalid target address");
+                    }
+                };
+                if let Ok(mut other) = TcpStream::connect_timeout(&parsed_addr, Duration::from_secs(5)) {
                     let req = serde_json::json!({"cmd":"pair_request","from_device_id": device_id});
                     let _ = writeln!(other, "{}", req);
                     let _ = other.flush();
@@ -282,27 +374,43 @@ fn process_sta_command(
                         }
                     }
                     let resp = String::from_utf8_lossy(&line);
-                    if resp.contains("pair_accepted") || resp.contains("\"status\":\"ok\"") {
-                        let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                    // Target may respond with:
+                    // - {"status":"ok","message":"pending"} (request queued, NOT paired yet)
+                    // - {"status":"ok","message":"pair_accepted"...} or similar when paired (only after B accepts)
+                    // We must NOT treat "status":"ok" as pairing success.
+                    if resp.contains("pair_accepted") {
+                        let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                         state.1 = Some(target_device_id.to_string());
+                        state.2 = Some(target_ip.to_string());
+                    } else {
+                        // Even if it's pending, we still know the peer IP to use later.
+                        let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
+                        // pending 不是 paired：清理历史 paired_device，避免状态混乱
+                        state.1 = None;
                         state.2 = Some(target_ip.to_string());
                     }
                     return r#"{"status":"ok"}"#.to_string();
                 }
-                return r#"{"status":"error","reason":"connect_target_failed"}"#.to_string();
+                return error_response(
+                    "connect_target_failed",
+                    "timeout or refused when connecting target",
+                );
             }
             if let Some(from_id) = json.get("from_device_id").and_then(|v| v.as_str()) {
                 let from_ip = peer_addr
                     .and_then(|a| a.to_string().split(':').next().map(String::from))
                     .unwrap_or_else(|| "0.0.0.0".to_string());
-                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                 state.0.push((from_id.to_string(), from_ip));
                 return r#"{"status":"ok","message":"pending"}"#.to_string();
             }
-            r#"{"status":"error","reason":"missing target_ip or from_device_id"}"#.to_string()
+            error_response(
+                "missing_target_ip_or_from_device_id",
+                "missing target_ip or from_device_id",
+            )
         }
         "get_pending_pair_requests" => {
-            let state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let state = lock_or_recover(pair_state.as_ref(), "pair_state");
             let pending: Vec<serde_json::Value> = state
                 .0
                 .iter()
@@ -311,81 +419,200 @@ fn process_sta_command(
             serde_json::json!({"status":"ok","pending": pending}).to_string()
         }
         "get_pair_status" => {
-            let pair_guard = pair_state.lock().unwrap_or_else(|e| e.into_inner());
-            let paired_with = pair_guard.1.as_deref().unwrap_or("");
-            let trig = trigger_state.lock().unwrap_or_else(|e| e.into_inner());
-            serde_json::json!({"status":"ok","paired_with": paired_with, "triggered_count": trig.1}).to_string()
-        }
-        "sync_tick" => {
-            // A 触发时每 tick 发来 phase，B 的 servo1 与 A 基本同步。
-            //
-            // B 的 servo2（连续旋转舵机）规则：
-            // - 当距离上一次 servo2“启动旋转”超过 10s 时（或初始时），执行一次：
-            //   cmd=120 旋转 0.4s，然后回到 cmd=90（停止）
-            // - 在 10s 窗口内无效（无论 A 是否短促/持续触发），超过 10s 则再次触发
-            const ANGLE_MIN: u16 = 25;
-            const ANGLE_MAX: u16 = 130;
-            const SPAN: u16 = 105;
-            const SERVO2_ROTATE_CMD: u16 = 120; // 暂定“速度值”
-            const SERVO2_ROTATE_DURATION_MS: u64 = 400;
-            const SERVO2_ROTATE_INTERVAL_MS: u64 = 10_000;
-            let phase = json.get("phase").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let angle0 = if phase < 1.0 {
-                ANGLE_MAX - (SPAN as f32 * phase) as u16
-            } else {
-                ANGLE_MIN + (SPAN as f32 * (phase - 1.0).min(1.0)) as u16
+            // Avoid holding two mutexes at once: copy pair state first, then read trigger state.
+            let (paired_with_owned, peer_ip_owned) = {
+                let pair_guard = lock_or_recover(pair_state.as_ref(), "pair_state");
+                (
+                    pair_guard.1.clone().unwrap_or_default(),
+                    pair_guard.2.clone().unwrap_or_default(),
+                )
             };
-            if let Some(s0) = servo.as_ref() {
-                let _ = s0.set_angle(angle0);
-            }
-            // 保持同步状态标记：用于外部理解/调试
-            {
-                let mut run = sync_running.lock().unwrap_or_else(|e| e.into_inner());
-                *run = true;
-            }
+            let triggered_count = {
+                let trig = lock_or_recover(trigger_state.as_ref(), "trigger_state");
+                trig.1
+            };
+            serde_json::json!({
+                "status":"ok",
+                "paired_with": paired_with_owned,
+                "peer_ip": peer_ip_owned,
+                "triggered_count": triggered_count
+            })
+            .to_string()
+        }
+        "sync_start" => {
+            // Start sync thread:
+            // - Servo1 (limited-angle) moves with fixed "middle" speed.
+            // - Servo2 (continuous rotation) keeps its built-in 10s periodic behavior.
+            //
+            // Trigger message only: no phase/velocity info is sent from A.
 
-            // servo2 rotation scheduler
-            if let Some(s1) = servo2.as_ref() {
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-
-                let mut trig = trigger_state.lock().unwrap_or_else(|e| e.into_inner());
-                let should_rotate = now_ms.saturating_sub(trig.0) >= SERVO2_ROTATE_INTERVAL_MS;
-                if should_rotate {
-                    trig.0 = now_ms;
-                    trig.1 = trig.1.saturating_add(1);
-
-                    // Spawn a short, non-blocking rotation task.
-                    let s1_for_task = s1.clone();
-                    std::thread::spawn(move || {
-                        let _ = s1_for_task.set_angle(SERVO2_ROTATE_CMD);
-                        std::thread::sleep(std::time::Duration::from_millis(
-                            SERVO2_ROTATE_DURATION_MS,
-                        ));
-                        let _ = s1_for_task.set_angle(SERVO2_CMD_NEUTRAL);
-                    });
+            // Change state first, and only spawn a new thread when transitioning false -> true.
+            let spawn_thread = {
+                let mut run = lock_or_recover(sync_running.as_ref(), "sync_running");
+                if *run {
+                    false
+                } else {
+                    *run = true;
+                    true
                 }
+            };
+
+            if !spawn_thread {
+                return r#"{"status":"ok"}"#.to_string();
             }
+
+            if let Some(s1) = servo2.as_ref() {
+                let _ = s1.set_angle(SERVO2_CMD_NEUTRAL);
+            }
+
+            let s0 = servo.clone();
+            let s1 = servo2.clone();
+            let sync_running_for_thread = Arc::clone(sync_running);
+            let trigger_state_for_thread = Arc::clone(trigger_state);
+
+            let _ = std::thread::Builder::new()
+                .name("sync-runner".into())
+                .stack_size(96 * 1024)
+                .spawn(move || {
+                    let sync_logic = || {
+                        const TICK_MS: u64 = 40;
+                        const ANGLE_MIN: u16 = 25;
+                        const ANGLE_MAX: u16 = 130;
+                        const SPAN: u16 = 105;
+                        const PHASE_FULL_CYCLE: f32 = 2.0;
+
+                        const SERVO2_ROTATE_CMD: u16 = 120;
+                        const SERVO2_ROTATE_DURATION_MS: u64 = 400;
+                        const SERVO2_ROTATE_INTERVAL_MS: u64 = 10_000;
+
+                        let mm_range_linear =
+                            TOF_THRESHOLD_START_MM.saturating_sub(TOF_THRESHOLD_FAST_MM).max(1);
+                        let d_mid =
+                            ((TOF_THRESHOLD_START_MM as u32 + TOF_THRESHOLD_FAST_MM as u32) / 2) as u16;
+                        let period_ms_mid = if d_mid <= TOF_THRESHOLD_FAST_MM {
+                            TOF_PERIOD_FAST_MS
+                        } else {
+                            TOF_PERIOD_SLOW_MS
+                                - (TOF_THRESHOLD_START_MM - d_mid) as u64
+                                    * (TOF_PERIOD_SLOW_MS - TOF_PERIOD_FAST_MS)
+                                    / (mm_range_linear as u64)
+                        };
+                        let period_ms_mid = period_ms_mid.max(1);
+
+                        let mut phase: f32 = 0.0;
+                        // Servo2 rotation window managed in-thread to avoid spawning short-lived threads.
+                        let mut servo2_rotating_until_ms: Option<u64> = None;
+
+                        loop {
+                            let run_now =
+                                *lock_or_recover(sync_running_for_thread.as_ref(), "sync_running");
+                            if !run_now {
+                                break;
+                            }
+
+                            std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
+
+                            // Check again after sleep for faster stop.
+                            let run_now =
+                                *lock_or_recover(sync_running_for_thread.as_ref(), "sync_running");
+                            if !run_now {
+                                break;
+                            }
+
+                            let advance = (TICK_MS as f32 / period_ms_mid as f32) * PHASE_FULL_CYCLE;
+                            phase += advance;
+                            if phase >= PHASE_FULL_CYCLE {
+                                phase -= PHASE_FULL_CYCLE;
+                            }
+
+                            let angle0 = if phase < 1.0 {
+                                ANGLE_MAX - (SPAN as f32 * phase) as u16
+                            } else {
+                                ANGLE_MIN + (SPAN as f32 * (phase - 1.0)) as u16
+                            };
+
+                            if let Some(ref servo0) = s0 {
+                                let _ = servo0.set_angle(angle0);
+                            }
+
+                            // servo2 scheduler
+                            if let Some(ref servo2_service) = s1 {
+                                let now_ms = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+
+                                if let Some(until_ms) = servo2_rotating_until_ms {
+                                    if now_ms >= until_ms {
+                                        let _ = servo2_service.set_angle(SERVO2_CMD_NEUTRAL);
+                                        servo2_rotating_until_ms = None;
+                                    }
+                                }
+
+                                let should_rotate = {
+                                    let mut trig = lock_or_recover(
+                                        trigger_state_for_thread.as_ref(),
+                                        "trigger_state",
+                                    );
+                                    let should =
+                                        servo2_rotating_until_ms.is_none()
+                                            && now_ms.saturating_sub(trig.0)
+                                                >= SERVO2_ROTATE_INTERVAL_MS;
+                                    if should {
+                                        trig.0 = now_ms;
+                                        trig.1 = trig.1.saturating_add(1);
+                                    }
+                                    should
+                                };
+
+                                if should_rotate {
+                                    let _ = servo2_service.set_angle(SERVO2_ROTATE_CMD);
+                                    servo2_rotating_until_ms =
+                                        Some(now_ms.saturating_add(SERVO2_ROTATE_DURATION_MS));
+                                }
+                            }
+                        }
+                    };
+
+                    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(sync_logic)).is_err();
+                    if panicked {
+                        warn!("sync-runner thread panicked, reset sync_running");
+                    }
+                    {
+                        let mut run = lock_or_recover(sync_running_for_thread.as_ref(), "sync_running");
+                        *run = false;
+                    }
+                    if let Some(ref servo2_service) = s1 {
+                        let _ = servo2_service.set_angle(SERVO2_CMD_NEUTRAL);
+                    }
+                });
+
             r#"{"status":"ok"}"#.to_string()
         }
         "sync_stop" => {
+            // Stop sync:
+            // - stop sync thread
+            // - park servo1 near idle angle
+            // - stop servo2 rotation
+            let mut run = lock_or_recover(sync_running.as_ref(), "sync_running");
+            *run = false;
+
             if let Some(s0) = servo.as_ref() {
-                // 停止时根据“离 25° 还是 130°更近”就近停靠
                 let current = s0.get_angle();
                 let d25 = (current as i32 - 25).abs() as u16;
                 let d130 = (current as i32 - 130).abs() as u16;
                 let idle_angle = if d25 <= d130 { 25 } else { 130 };
                 let _ = s0.set_angle(idle_angle);
             }
-            let mut run = sync_running.lock().unwrap_or_else(|e| e.into_inner());
-            *run = false;
+
+            if let Some(s2) = servo2.as_ref() {
+                let _ = s2.set_angle(SERVO2_CMD_NEUTRAL);
+            }
             r#"{"status":"ok"}"#.to_string()
         }
         "accept_pair" => {
             let from_device_id = json.get("from_device_id").and_then(|v| v.as_str()).unwrap_or("");
-            let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
             let from_ip = state.0.iter().find(|(id, _)| id == from_device_id).map(|(_, ip)| ip.clone());
             if let Some(ip) = from_ip.clone() {
                 state.0.retain(|(id, _)| id != from_device_id);
@@ -393,55 +620,72 @@ fn process_sta_command(
                 state.2 = Some(ip.clone());
                 drop(state);
                 let addr = format!("{}:{}", ip, STA_TCP_PORT);
-                if let Ok(mut other) = TcpStream::connect_timeout(
-                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
-                    Duration::from_secs(5),
-                ) {
+                if let Ok(addr_parsed) = addr.parse() {
+                    if let Ok(mut other) = TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(5)) {
                     let req = serde_json::json!({"cmd":"pair_accepted","device_id": device_id});
                     let _ = writeln!(other, "{}", req);
                     let _ = other.flush();
                 }
+                }
                 return r#"{"status":"ok"}"#.to_string();
             }
-            r#"{"status":"error","reason":"pending_not_found"}"#.to_string()
+            error_response("pending_not_found", "pending request not found")
+        }
+        "reject_pair" => {
+            // Remove a pending pair request without changing paired state.
+            let from_device_id = json.get("from_device_id").and_then(|v| v.as_str()).unwrap_or("");
+            let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
+            state.0.retain(|(id, _)| id != from_device_id);
+            r#"{"status":"ok"}"#.to_string()
         }
         "pair_accepted" => {
             if let Some(peer_id) = json.get("device_id").and_then(|v| v.as_str()) {
-                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                 state.1 = Some(peer_id.to_string());
-                // peer_ip 在 initiator 的 pair_request 里已根据 target_ip 写入
+                // Ensure initiator stores the *real* peer_ip, not a potentially stale target_ip.
+                // For pair_accepted, TCP client is the remote (acceptor) device.
+                if let Some(pa) = peer_addr {
+                    let ip = pa.to_string().split(':').next().unwrap_or("").to_string();
+                    if !ip.is_empty() {
+                        state.2 = Some(ip);
+                    }
+                }
                 return r#"{"status":"ok"}"#.to_string();
             }
-            r#"{"status":"error","reason":"missing device_id"}"#.to_string()
+            error_response("missing_device_id", "missing device_id")
         }
         "unpair" => {
-            let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+            let peer_ip_from_req = json.get("peer_ip").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
+            // Prefer peer_ip provided by request; otherwise fall back to peer_ip stored in pair_state.
+            let peer_ip = peer_ip_from_req.or_else(|| state.2.clone());
+
+            // Clear local pair state first (we already captured peer_ip if available).
             state.1 = None;
             state.2 = None;
             state.0.clear();
-            let peer_ip = json.get("peer_ip").and_then(|v| v.as_str());
             drop(state);
+
             if let Some(ip) = peer_ip {
                 let addr = format!("{}:{}", ip, STA_TCP_PORT);
-                if let Ok(mut other) = TcpStream::connect_timeout(
-                    &addr.parse().unwrap_or_else(|_| "127.0.0.1:12345".parse().unwrap()),
-                    Duration::from_secs(5),
-                ) {
+                if let Ok(addr_parsed) = addr.parse() {
+                    if let Ok(mut other) = TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(5)) {
                     let req = serde_json::json!({"cmd":"unpair_notify","device_id": device_id});
                     let _ = writeln!(other, "{}", req);
                     let _ = other.flush();
+                }
                 }
             }
             r#"{"status":"ok"}"#.to_string()
         }
         "unpair_notify" => {
             if json.get("device_id").is_some() {
-                let mut state = pair_state.lock().unwrap_or_else(|e| e.into_inner());
+                let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                 state.1 = None;
                 state.2 = None;
                 return r#"{"status":"ok"}"#.to_string();
             }
-            r#"{"status":"error","reason":"missing device_id"}"#.to_string()
+            error_response("missing_device_id", "missing device_id")
         }
         "update_wifi_list" => {
             if let Some(networks) = json.get("networks").and_then(|n| n.as_array()) {
@@ -464,12 +708,12 @@ fn process_sta_command(
                         Some((ssid, pwd, auth.to_string()))
                     })
                     .collect();
-                let mut store = wifi_list_store.lock().unwrap_or_else(|e| e.into_inner());
+                let mut store = lock_or_recover(wifi_list_store.as_ref(), "wifi_list_store");
                 *store = list;
                 return r#"{"status":"ok"}"#.to_string();
             }
-            r#"{"status":"error","reason":"missing networks"}"#.to_string()
+            error_response("missing_networks", "missing networks")
         }
-        _ => r#"{"status":"error","reason":"unknown cmd"}"#.to_string(),
+        _ => error_response("unknown_cmd", "unknown cmd"),
     }
 }
