@@ -45,6 +45,8 @@ dependencies:
   uuid: ^4.5.1
   # 控制台日志（flutter run 时在终端可见，release 构建会裁剪）
   logger: ^2.4.0
+  android_id: ^0.5.1
+  device_info_plus: ^12.3.0
 
 dev_dependencies:
   flutter_test:

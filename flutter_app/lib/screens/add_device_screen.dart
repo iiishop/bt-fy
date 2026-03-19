@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:op_wifi_utils/op_wifi_utils.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 import 'package:uuid/uuid.dart';
@@ -9,6 +12,7 @@ import '../models/device.dart';
 import '../models/wifi_network.dart';
 import '../services/device_discovery_service.dart';
 import '../services/device_provisioning_service.dart';
+import '../services/phone_identity_service.dart';
 import '../services/device_storage_service.dart';
 import '../services/pending_bind_store.dart';
 import '../services/wifi_storage_service.dart';
@@ -27,13 +31,19 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     onDeviceSeen: (device) {
       if (!mounted) return;
       setState(() {
-        final exists = _pendingDevices.any((d) => d.deviceId == device.deviceId);
+        final exists = _pendingDevices.any(
+          (d) => d.deviceId == device.deviceId,
+        );
         if (!exists) _pendingDevices = [..._pendingDevices, device];
       });
+    },
+    onBindingSeen: (deviceId, ip, bindToken) {
+      unawaited(_handleBindingSeen(deviceId, ip, bindToken));
     },
   );
   final DeviceStorageService _deviceStorage = DeviceStorageService();
   final WifiStorageService _wifiStorage = WifiStorageService();
+  final PhoneIdentityService _phoneIdentity = PhoneIdentityService();
 
   List<WiFiAccessPoint> _apList = [];
   bool _scanning = false;
@@ -46,10 +56,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   List<Device> _pendingDevices = [];
   Device? _selectedPending;
   bool _binding = false;
+  bool _waitingBindingAfterConfig = false;
 
   @override
   void initState() {
     super.initState();
+    _discovery.startListening();
     _startScan();
   }
 
@@ -190,41 +202,83 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     setState(() {
       _configSending = true;
       _configError = null;
+      _waitingBindingAfterConfig = false;
     });
     final bindToken = const Uuid().v4();
-    final phoneId = const Uuid().v4();
-    PendingBindStore.setPending(bindToken, phoneId);
-    final result = await _provisioning.config(networks: list, bindToken: bindToken);
+    String phoneId;
+    try {
+      phoneId = await _phoneIdentity.getStablePhoneId();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _configSending = false;
+        _configError = AppLocalizations.of(
+          context,
+        ).t('stable_phone_id_required');
+      });
+      return;
+    }
+    await PendingBindStore.setPending(bindToken, phoneId);
+    final result = await _provisioning.config(
+      networks: list,
+      bindToken: bindToken,
+    );
     if (!mounted) return;
     setState(() {
       _configSending = false;
       final status = result['status'] as String?;
       if (status == 'connecting' || status == 'ok') {
         _configError = null;
-        if (mounted) {
-          final l10n = AppLocalizations.of(context);
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text(l10n.t('config_sent_title')),
-              content: Text(l10n.t('config_sent_message')),
-              actions: [
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    if (context.mounted) Navigator.pop(context);
-                  },
-                  child: Text(l10n.t('ok')),
-                ),
-              ],
-            ),
-          );
-        }
+        _waitingBindingAfterConfig = true;
       } else {
-        _configError = result['reason'] as String? ?? AppLocalizations.maybeOf(context)?.t('config_failed') ?? 'Config failed';
-        PendingBindStore.clear();
+        _configError =
+            DeviceProvisioningService.pickErrorMessage(result) ??
+            AppLocalizations.maybeOf(context)?.t('config_failed') ??
+            'Config failed';
+        _waitingBindingAfterConfig = false;
+        unawaited(PendingBindStore.clear());
       }
     });
+    if (mounted && _waitingBindingAfterConfig) {
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('bind_waiting_message'))),
+      );
+    }
+  }
+
+  Future<void> _handleBindingSeen(
+    String deviceId,
+    String ip,
+    String bindToken,
+  ) async {
+    if (!mounted || ip.isEmpty || ip == '0.0.0.0') return;
+    final pending = await PendingBindStore.getPending();
+    if (pending == null || pending.token != bindToken) return;
+
+    final bindRes = await DeviceDiscoveryService.bind(ip, pending.phoneId);
+    if (bindRes['status'] != 'ok') return;
+
+    await PendingBindStore.clear();
+    await _deviceStorage.save(
+      Device(
+        deviceId: deviceId,
+        name: deviceId,
+        ipAddress: ip,
+        isBound: true,
+        boundPhoneId: pending.phoneId,
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _waitingBindingAfterConfig = false;
+      _configError = null;
+    });
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.t('bind_success_message'))));
+    Navigator.pop(context);
   }
 
   @override
@@ -237,12 +291,32 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     final d = _selectedPending;
     if (d == null) return;
     setState(() => _binding = true);
-    final phoneId = const Uuid().v4();
+    String phoneId;
+    try {
+      phoneId = await _phoneIdentity.getStablePhoneId();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _binding = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).t('stable_phone_id_required'),
+          ),
+        ),
+      );
+      return;
+    }
     final result = await DeviceDiscoveryService.bind(d.ipAddress, phoneId);
     setState(() => _binding = false);
     if (!mounted) return;
     if (result['status'] == 'ok') {
-      await _deviceStorage.save(d.copyWith(isBound: true, name: d.deviceId));
+      await _deviceStorage.save(
+        d.copyWith(
+          isBound: true,
+          name: d.deviceId,
+          boundPhoneId: phoneId,
+        ),
+      );
       if (mounted) Navigator.pop(context);
     }
   }
@@ -255,96 +329,305 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(l10n.t('step1_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          if (_scanning)
-            const LinearProgressIndicator()
-          else
-            FilledButton(onPressed: _startScan, child: Text(l10n.t('rescan'))),
-          if (_apList.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(l10n.t('step1_subtitle'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            const SizedBox(height: 4),
-            ..._apList.map((ap) => ListTile(
-                  title: Text(ap.ssid),
-                  subtitle: Text(l10n.t('step1_ap_subtitle', [ap.level.toString()])),
-                  enabled: !_connecting,
-                  onTap: () => _onTapDeviceHotspot(ap.ssid),
-                )),
-          ],
-          if (_connecting) ...[
-            const SizedBox(height: 12),
-            const Center(child: CircularProgressIndicator()),
-            Center(child: Text(l10n.t('connecting'))),
-          ],
-          if (_connectError != null) ...[
-            const SizedBox(height: 8),
-            Text(_connectError!, style: const TextStyle(color: Colors.red)),
-          ],
-          const Divider(height: 24),
-          Text(l10n.t('step2_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          if (_identifiedDeviceId != null)
-            ListTile(
-              title: Text(l10n.t('device_found')),
-              subtitle: Text('$_identifiedDeviceId · ${l10n.t('firmware')} $_identifiedFw'),
-            )
-          else if (!_connecting)
-            Text(l10n.t('step2_subtitle'), style: const TextStyle(color: Colors.grey)),
-          if (_identifiedDeviceId != null) ...[
-            const SizedBox(height: 8),
-            Text(l10n.t('step2_wifi_hint'), style: const TextStyle(fontWeight: FontWeight.bold)),
-            FutureBuilder<List<WifiNetwork>>(
-              future: _wifiStorage.getAll(),
-              builder: (context, snap) {
-                final list = snap.data ?? [];
-                if (list.isEmpty) {
-                  return Text(l10n.t('add_wifi_first'), style: const TextStyle(color: Colors.grey));
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ...list.map((w) => ListTile(title: Text(w.ssid))),
+          _StepSectionCard(
+            stepLabel: l10n.t('step1_title'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _scanning
+                      ? const LinearProgressIndicator(key: ValueKey('scanning'))
+                      : FilledButton.icon(
+                          key: const ValueKey('rescan'),
+                          onPressed: () async {
+                            await HapticFeedback.selectionClick();
+                            _startScan();
+                          },
+                          icon: const Icon(Icons.radar),
+                          label: Text(l10n.t('rescan')),
+                        ),
+                ),
+                if (_apList.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    l10n.t('step1_subtitle'),
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  ..._apList.map(
+                    (ap) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.wifi),
+                        title: Text(ap.ssid),
+                        subtitle: Text(
+                          l10n.t('step1_ap_subtitle', [ap.level.toString()]),
+                        ),
+                        enabled: !_connecting,
+                        onTap: () async {
+                          await HapticFeedback.selectionClick();
+                          _onTapDeviceHotspot(ap.ssid);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+                if (_connecting) ...[
+                  const SizedBox(height: 12),
+                  const Center(child: CircularProgressIndicator()),
+                  const SizedBox(height: 8),
+                  Center(child: Text(l10n.t('connecting'))),
+                ],
+                if (_connectError != null) ...[
+                  const SizedBox(height: 8),
+                  _InlineInfoBanner(
+                    icon: Icons.error_outline,
+                    text: _connectError!,
+                    tone: _BannerTone.error,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _StepSectionCard(
+            stepLabel: l10n.t('step2_title'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _identifiedDeviceId != null
+                      ? ListTile(
+                          key: const ValueKey('identified'),
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.memory),
+                          title: Text(l10n.t('device_found')),
+                          subtitle: Text(
+                            '$_identifiedDeviceId · ${l10n.t('firmware')} $_identifiedFw',
+                          ),
+                        )
+                      : Text(
+                          l10n.t('step2_subtitle'),
+                          key: const ValueKey('not-identified'),
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                ),
+                if (_identifiedDeviceId != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.t('step2_wifi_hint'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  FutureBuilder<List<WifiNetwork>>(
+                    future: _wifiStorage.getAll(),
+                    builder: (context, snap) {
+                      final list = snap.data ?? [];
+                      if (list.isEmpty) {
+                        return _InlineInfoBanner(
+                          icon: Icons.info_outline,
+                          text: l10n.t('add_wifi_first'),
+                          tone: _BannerTone.neutral,
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ...list.map(
+                            (w) => Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: const Icon(Icons.wifi),
+                                title: Text(w.ssid),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.icon(
+                            onPressed: _configSending
+                                ? null
+                                : () async {
+                                    await HapticFeedback.mediumImpact();
+                                    _sendConfigAll();
+                                  },
+                            icon: _configSending
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
+                            label: Text(l10n.t('send_config_all')),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  if (_configError != null) ...[
                     const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: _configSending ? null : _sendConfigAll,
-                      child: _configSending
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Text(l10n.t('send_config_all')),
+                    _InlineInfoBanner(
+                      icon: Icons.error_outline,
+                      text: _configError!,
+                      tone: _BannerTone.error,
                     ),
                   ],
-                );
-              },
+                  if (_waitingBindingAfterConfig) ...[
+                    const SizedBox(height: 8),
+                    _InlineInfoBanner(
+                      icon: Icons.hourglass_top_rounded,
+                      text: l10n.t('bind_waiting_message'),
+                      tone: _BannerTone.neutral,
+                      loading: true,
+                    ),
+                  ],
+                ],
+              ],
             ),
-            if (_configError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(_configError!, style: const TextStyle(color: Colors.red)),
-              ),
-          ],
+          ),
           if (_pendingDevices.isNotEmpty) ...[
-            const Divider(height: 24),
-            Text(l10n.t('step3_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
-            ..._pendingDevices.map((d) => ListTile(
-                  title: Text(d.deviceId),
-                  subtitle: Text(d.ipAddress),
-                  trailing: _selectedPending?.deviceId == d.deviceId ? const Icon(Icons.check) : null,
-                  onTap: () async {
-                    setState(() => _selectedPending = d);
-                    await DeviceDiscoveryService.demoServo(d.ipAddress);
-                  },
-                )),
-            if (_selectedPending != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: FilledButton(
-                  onPressed: _binding ? null : _confirmBind,
-                  child: _binding
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text(l10n.t('confirm_bind')),
-                ),
+            const SizedBox(height: 12),
+            _StepSectionCard(
+              stepLabel: l10n.t('step3_title'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ..._pendingDevices.map(
+                    (d) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.developer_board),
+                        title: Text(d.deviceId),
+                        subtitle: Text(d.ipAddress),
+                        trailing: _selectedPending?.deviceId == d.deviceId
+                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            : const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          await HapticFeedback.selectionClick();
+                          setState(() => _selectedPending = d);
+                          await DeviceDiscoveryService.demoServo(d.ipAddress);
+                        },
+                      ),
+                    ),
+                  ),
+                  if (_selectedPending != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: FilledButton.icon(
+                        onPressed: _binding
+                            ? null
+                            : () async {
+                                await HapticFeedback.mediumImpact();
+                                _confirmBind();
+                              },
+                        icon: _binding
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.verified_user),
+                        label: Text(l10n.t('confirm_bind')),
+                      ),
+                    ),
+                ],
               ),
+            ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+enum _BannerTone { neutral, error }
+
+class _InlineInfoBanner extends StatelessWidget {
+  const _InlineInfoBanner({
+    required this.icon,
+    required this.text,
+    required this.tone,
+    this.loading = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final _BannerTone tone;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final isError = tone == _BannerTone.error;
+    final bg = isError
+        ? Colors.red.withAlpha((0.08 * 255).round())
+        : Colors.blueGrey.withAlpha((0.08 * 255).round());
+    final fg = isError ? Colors.red.shade700 : Colors.blueGrey.shade700;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          loading
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: fg,
+                  ),
+                )
+              : Icon(icon, size: 18, color: fg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: fg),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepSectionCard extends StatelessWidget {
+  const _StepSectionCard({
+    required this.stepLabel,
+    required this.child,
+  });
+
+  final String stepLabel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              stepLabel,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            child,
+          ],
+        ),
       ),
     );
   }

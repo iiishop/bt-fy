@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/device.dart';
 import '../services/device_discovery_service.dart';
+import '../services/device_provisioning_service.dart';
 import '../services/device_storage_service.dart';
 import '../services/discovered_devices_store.dart';
+import '../services/phone_identity_service.dart';
 import '../services/wifi_storage_service.dart';
+import '../viewmodels/home_view_model.dart';
 
 class DeviceDetailScreen extends StatefulWidget {
   const DeviceDetailScreen({super.key, required this.device});
@@ -20,25 +25,69 @@ class DeviceDetailScreen extends StatefulWidget {
 class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   final DeviceStorageService _deviceStorage = DeviceStorageService();
   final WifiStorageService _wifiStorage = WifiStorageService();
+  final PhoneIdentityService _phoneIdentity = PhoneIdentityService();
   late Device _device;
   final _nicknameController = TextEditingController();
   final _pairTargetIdController = TextEditingController();
   int _servo0Angle = 90;
   int _servo1Angle = 90;
   bool _busy = false;
+  Timer? _statusTimer;
+  bool get _isPeerShadow => _device.isPeerShadow;
 
   @override
   void initState() {
     super.initState();
     _device = widget.device;
     _nicknameController.text = _device.name;
-    _syncWifiListThenCheckPending();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_enforceOwnershipOnOpen());
+    });
+    if (!_isPeerShadow) {
+      _syncWifiListThenCheckPending();
+    }
+    _statusTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  Future<void> _enforceOwnershipOnOpen() async {
+    if (_isPeerShadow || !mounted) return;
+    final bound = _device.boundPhoneId?.trim();
+    if (bound == null || bound.isEmpty) {
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.t('device_owner_unknown'))));
+      Navigator.of(context).pop();
+      return;
+    }
+    String currentPhoneId;
+    try {
+      currentPhoneId = await _phoneIdentity.getStablePhoneId();
+    } catch (_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('stable_phone_id_required'))),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+    if (!mounted) return;
+    if (currentPhoneId != bound) {
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('device_owner_mismatch'))),
+      );
+      Navigator.of(context).pop();
+    }
   }
 
   /// 与设备通讯时先同步 WiFi 表、从 ESP 同步配对状态，再拉取配对请求
   Future<void> _syncWifiListThenCheckPending() async {
     if (_device.ipAddress.isEmpty) {
-      _checkPendingPairRequests();
       return;
     }
     final list = await _wifiStorage.getAll();
@@ -50,6 +99,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final status = await DeviceDiscoveryService.getPairStatus(_device.ipAddress);
     if (!mounted) return;
     final pairedWith = (status['paired_with'] as String? ?? '').trim();
+    final peerIpFromStatus = (status['peer_ip'] as String? ?? '').trim();
     final triggeredCount = (status['triggered_count'] as num?)?.toInt() ?? _device.triggeredByPairCount;
     if (pairedWith.isNotEmpty) {
       if (_device.pairedWithDeviceId != pairedWith || _device.triggeredByPairCount != triggeredCount) {
@@ -59,13 +109,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       }
       final peer = await _deviceStorage.getByDeviceId(pairedWith);
       if (peer == null) {
-        final peerIp = DiscoveredDevicesStore.getIp(pairedWith) ?? '';
+        final peerIp = peerIpFromStatus.isNotEmpty ? peerIpFromStatus : (DiscoveredDevicesStore.getIp(pairedWith) ?? '');
         await _deviceStorage.save(Device(
           deviceId: pairedWith,
           name: pairedWith,
           ipAddress: peerIp,
           isBound: true,
           pairedWithDeviceId: _device.deviceId,
+          isPeerShadow: true,
         ));
       }
     } else {
@@ -77,52 +128,138 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       }
     }
     if (!mounted) return;
-    _checkPendingPairRequests();
   }
 
   @override
   void dispose() {
     _nicknameController.dispose();
     _pairTargetIdController.dispose();
+    _statusTimer?.cancel();
+    _statusTimer = null;
     super.dispose();
   }
 
-  Future<void> _checkPendingPairRequests() async {
-    if (_device.ipAddress.isEmpty) return;
-    final res = await DeviceDiscoveryService.getPendingPairRequests(_device.ipAddress);
-    if (!mounted) return;
-    final pending = res['pending'] as List<dynamic>? ?? [];
-    if (pending.isEmpty) return;
-    final first = pending.first as Map<String, dynamic>?;
-    final fromId = first?['from_device_id'] as String? ?? '';
-    final fromIp = first?['from_ip'] as String? ?? '';
-    if (fromId.isEmpty) return;
+  String _statusText(AppLocalizations l10n, Device d) {
+    switch (HomeViewModel.presenceOf(d)) {
+      case DevicePresence.online:
+        return l10n.t('currently_online');
+      case DevicePresence.suspected:
+        return l10n.t('suspected_offline', [_formatLastSeen(d.lastSeen)]);
+      case DevicePresence.offline:
+        return l10n.t('last_seen', [_formatLastSeen(d.lastSeen)]);
+    }
+  }
+
+  Future<bool> _unbindWithProgress() async {
+    final l10n = AppLocalizations.of(context);
+    final currentContext = context;
+    if (_device.ipAddress.isEmpty) return false;
+
+    setState(() => _busy = true);
+
+    final progressValue = ValueNotifier<double>(0.0);
+    final progressText = ValueNotifier<String>(l10n.t('unbind_progress_sending'));
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(l10n.t('unbind_progress_title')),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<String>(
+                  valueListenable: progressText,
+                  builder: (context, value, _) => Text(value),
+                ),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<double>(
+                  valueListenable: progressValue,
+                  builder: (context, value, _) => LinearProgressIndicator(value: value),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    var dialogPopped = false;
+    try {
+      progressValue.value = 0.2;
+      progressText.value = l10n.t('unbind_progress_sending');
+      final res = await DeviceDiscoveryService.unbind(_device.ipAddress);
+      if (res['status'] != 'ok') {
+        throw Exception(
+          DeviceProvisioningService.pickErrorMessage(res) ??
+              l10n.t('unbind_progress_failed', ['unknown']),
+        );
+      }
+
+      progressValue.value = 0.7;
+      progressText.value = l10n.t('unbind_progress_clearing');
+
+      await _deviceStorage.delete(_device.deviceId);
+
+      progressValue.value = 1.0;
+      progressText.value = l10n.t('unbind_progress_done');
+
+      dialogPopped = true;
+      if (!currentContext.mounted) return false;
+
+      Navigator.of(currentContext, rootNavigator: true).pop();
+
+      ScaffoldMessenger.of(currentContext).showSnackBar(
+        SnackBar(content: Text(l10n.t('unbind_progress_done'))),
+      );
+      return true;
+    } catch (e) {
+      if (currentContext.mounted) {
+        _showError(l10n.t('unbind_progress_failed', [e.toString()]));
+      }
+      return false;
+    } finally {
+      progressValue.dispose();
+      progressText.dispose();
+      if (currentContext.mounted) {
+        if (!dialogPopped) {
+          Navigator.of(currentContext, rootNavigator: true).pop();
+          // Ignore any extra pops if the dialog was already dismissed.
+        }
+      }
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeLocalOnly() async {
     final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.t('pair_request_title')),
-        content: Text(l10n.t('pair_request_content', [fromId, fromIp])),
+        title: Text(l10n.t('remove_local_record')),
+        content: Text(l10n.t('remove_local_record_confirm')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('reject'))),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.t('accept'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.t('delete')),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    final acceptRes = await DeviceDiscoveryService.acceptPair(_device.ipAddress, fromId);
+    await _deviceStorage.delete(_device.deviceId);
     if (!mounted) return;
-    if (acceptRes['status'] == 'ok') {
-      await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: fromId));
-      setState(() => _device = _device.copyWith(pairedWithDeviceId: fromId));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.t('pairing_accepted'))),
-        );
-      }
-    } else {
-      _showError(acceptRes['reason']?.toString() ?? l10n.t('accept_pair_failed'));
-    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.t('remove_local_record_done'))));
+    Navigator.of(context).pop();
   }
 
   @override
@@ -138,34 +275,56 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       appBar: AppBar(
         title: Text(d.name),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.link_off),
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text(l10n.t('unbind_title')),
-                  content: Text(l10n.t('unbind_confirm')),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('cancel'))),
-                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.t('unbind'))),
-                  ],
-                ),
-              );
-              if (ok == true) {
-                await DeviceDiscoveryService.unbind(d.ipAddress);
-                await _deviceStorage.delete(d.deviceId);
+          if (!_isPeerShadow)
+            IconButton(
+              icon: const Icon(Icons.link_off),
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(l10n.t('unbind_title')),
+                    content: Text(l10n.t('unbind_confirm')),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('cancel'))),
+                      FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.t('unbind'))),
+                    ],
+                  ),
+                );
+                if (ok != true) return;
                 if (!mounted) return;
-                navigator.pop();
-              }
-            },
+                final success = await _unbindWithProgress();
+                if (!mounted) return;
+                if (success) {
+                  navigator.pop();
+                }
+              },
+            ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _busy ? null : _removeLocalOnly,
+            tooltip: l10n.t('remove_local_record'),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_isPeerShadow)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withAlpha((0.1 * 255).round()),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  l10n.t('peer_device_readonly'),
+                  style: TextStyle(color: Colors.orange.shade800),
+                ),
+              ),
+            ),
           ListTile(
             title: Text(l10n.t('device_id')),
             subtitle: Text(d.deviceId),
@@ -205,14 +364,15 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               title: Text(l10n.t('triggered_by_pair_count')),
               subtitle: Text(l10n.t('triggered_by_pair_count_value', [d.triggeredByPairCount.toString()])),
             ),
-            Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.link_off, size: 18),
-                label: Text(l10n.t('unpair')),
-                onPressed: _busy ? null : _unpair,
+            if (!_isPeerShadow)
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.link_off, size: 18),
+                  label: Text(l10n.t('unpair')),
+                  onPressed: _busy ? null : _unpair,
+                ),
               ),
-            ),
           ],
           ListTile(
             title: const Text('IP'),
@@ -221,7 +381,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           ListTile(
             title: Text(l10n.t('status')),
             subtitle: Text(
-              d.isOnline ? l10n.t('currently_online') : l10n.t('last_seen', [_formatLastSeen(d.lastSeen)]),
+              _statusText(l10n, d),
             ),
           ),
           if (d.lastConnectedSsid != null && d.lastConnectedSsid!.isNotEmpty)
@@ -229,62 +389,70 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               title: Text(l10n.t('wifi')),
               subtitle: Text(d.lastConnectedSsid!),
             ),
-          Divider(height: 24),
-          Text(l10n.t('pair_section_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _pairTargetIdController,
-            decoration: InputDecoration(
-              labelText: l10n.t('pair_target_label'),
-              hintText: l10n.t('pair_target_hint'),
-              border: const OutlineInputBorder(),
-              isDense: true,
+          if (!_isPeerShadow) ...[
+            Divider(height: 24),
+            Text(l10n.t('pair_section_title'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _pairTargetIdController,
+              decoration: InputDecoration(
+                labelText: l10n.t('pair_target_label'),
+                hintText: l10n.t('pair_target_hint'),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _busy ? null : _sendPairRequest,
-            child: Text(l10n.t('send_pair_request')),
-          ),
-          const Divider(height: 24),
-          Text(l10n.t('servo_0'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          Slider(
-            value: _servo0Angle.toDouble(),
-            min: 0,
-            max: 180,
-            divisions: 18,
-            label: '$_servo0Angle°',
-            onChanged: _busy ? null : (v) => setState(() => _servo0Angle = v.round()),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FilledButton(
-                onPressed: _busy ? null : () => _sendMoveServo(0, _servo0Angle),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _busy ? null : _sendPairRequest,
+              child: Text(l10n.t('send_pair_request')),
+            ),
+            const Divider(height: 24),
+            Text(l10n.t('servo_0'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            Slider(
+              value: _servo0Angle.toDouble(),
+              min: 0,
+              max: 180,
+              divisions: 18,
+              label: '$_servo0Angle°',
+              onChanged: _busy ? null : (v) => setState(() => _servo0Angle = v.round()),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton(
+                  onPressed: _busy ? null : () => _sendMoveServo(0, _servo0Angle),
+                  child: Text(l10n.t('set_angle')),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton(
+                  onPressed: _busy ? null : _demoServo,
+                  child: Text(l10n.t('demo_servo')),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(l10n.t('servo_1'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            Slider(
+              value: _servo1Angle.toDouble(),
+              min: 0,
+              max: 180,
+              divisions: 18,
+              label: '$_servo1Angle°',
+              onChanged: _busy ? null : (v) => setState(() => _servo1Angle = v.round()),
+            ),
+            Center(
+              child: FilledButton(
+                onPressed: _busy ? null : () => _sendMoveServo(1, _servo1Angle),
                 child: Text(l10n.t('set_angle')),
               ),
-              const SizedBox(width: 16),
-              OutlinedButton(
-                onPressed: _busy ? null : _demoServo,
-                child: Text(l10n.t('demo_servo')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(l10n.t('servo_1'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          Slider(
-            value: _servo1Angle.toDouble(),
-            min: 0,
-            max: 180,
-            divisions: 18,
-            label: '$_servo1Angle°',
-            onChanged: _busy ? null : (v) => setState(() => _servo1Angle = v.round()),
-          ),
-          Center(
-            child: FilledButton(
-              onPressed: _busy ? null : () => _sendMoveServo(1, _servo1Angle),
-              child: Text(l10n.t('set_angle')),
             ),
+          ],
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _removeLocalOnly,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: Text(l10n.t('remove_local_record')),
           ),
         ],
       ),
@@ -302,6 +470,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _sendMoveServo(int index, int angle) async {
     final l10n = AppLocalizations.maybeOf(context);
     if (l10n == null) return;
+    if (_isPeerShadow) {
+      _showError(l10n.t('peer_device_readonly'));
+      return;
+    }
     if (_device.ipAddress.isEmpty) {
       _showError(l10n.t('device_ip_empty'));
       return;
@@ -311,13 +483,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (res['status'] != 'ok') {
-      _showError(res['reason']?.toString() ?? l10n.t('set_failed'));
+      _showError(DeviceProvisioningService.pickErrorMessage(res) ?? l10n.t('set_failed'));
     }
   }
 
   Future<void> _demoServo() async {
     final l10n = AppLocalizations.maybeOf(context);
     if (l10n == null) return;
+    if (_isPeerShadow) {
+      _showError(l10n.t('peer_device_readonly'));
+      return;
+    }
     if (_device.ipAddress.isEmpty) {
       _showError(l10n.t('device_ip_empty'));
       return;
@@ -327,7 +503,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (res['status'] != 'ok') {
-      _showError(res['reason']?.toString() ?? l10n.t('demo_failed'));
+      _showError(DeviceProvisioningService.pickErrorMessage(res) ?? l10n.t('demo_failed'));
     }
   }
 
@@ -345,6 +521,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _unpair() async {
     final l10n = AppLocalizations.maybeOf(context);
     if (l10n == null || _device.pairedWithDeviceId == null) return;
+    if (_isPeerShadow) {
+      _showError(l10n.t('peer_device_readonly'));
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -359,9 +539,22 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (ok != true || !mounted) return;
     final peerId = _device.pairedWithDeviceId!;
     final peer = await _deviceStorage.getByDeviceId(peerId);
+    // Prefer the latest UDP-discovered IP to avoid stale/empty stored IP.
+    final peerIpFromDiscovery = DiscoveredDevicesStore.getIp(peerId);
+    final peerIp = (peerIpFromDiscovery != null && peerIpFromDiscovery.isNotEmpty)
+        ? peerIpFromDiscovery
+        : peer?.ipAddress;
     setState(() => _busy = true);
-    await DeviceDiscoveryService.unpair(_device.ipAddress, peerIp: peer?.ipAddress);
+    final res = await DeviceDiscoveryService.unpair(_device.ipAddress, peerIp: peerIp);
     if (!mounted) return;
+    if (res['status'] != 'ok') {
+      setState(() => _busy = false);
+      _showError(
+        DeviceProvisioningService.pickErrorMessage(res) ??
+            l10n.t('unpair_failed'),
+      );
+      return;
+    }
     await _deviceStorage.delete(peerId);
     final updated = _device.copyWith(pairedWithDeviceId: null, triggeredByPairCount: 0);
     await _deviceStorage.save(updated);
@@ -378,6 +571,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _sendPairRequest() async {
     final l10n = AppLocalizations.maybeOf(context);
     if (l10n == null) return;
+    if (_isPeerShadow) {
+      _showError(l10n.t('peer_device_readonly'));
+      return;
+    }
     final targetId = _pairTargetIdController.text.trim();
     if (targetId.isEmpty) {
       _showError(l10n.t('enter_target_id'));
@@ -403,7 +600,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (!mounted) return;
     if (res['status'] != 'ok') {
       setState(() => _busy = false);
-      _showError(res['reason']?.toString() ?? l10n.t('pair_request_failed'));
+      _showError(
+        DeviceProvisioningService.pickErrorMessage(res) ?? l10n.t('pair_request_failed'),
+      );
       return;
     }
     final result = await _showPairWaitingDialog(targetId);
@@ -418,10 +617,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       ipAddress: peerIp,
       isBound: true,
       pairedWithDeviceId: _device.deviceId,
+      isPeerShadow: true,
     );
     await _deviceStorage.save(peerDevice);
     DiscoveredDevicesStore.update(peerId, peerIp);
     setState(() => _device = _device.copyWith(pairedWithDeviceId: peerId));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('pair_success'))));
   }
 
@@ -489,9 +690,15 @@ class _PairWaitingDialogState extends State<_PairWaitingDialog> {
       if (!mounted) return;
       final status = await DeviceDiscoveryService.getPairStatus(widget.myDeviceIp);
       if (!mounted) return;
-      final pairedWith = status['paired_with'] as String? ?? '';
+      final pairedWith = (status['paired_with'] as String? ?? '').trim();
+      final peerIpFromStatus = (status['peer_ip'] as String? ?? '').trim();
       if (pairedWith == widget.targetId) {
-        if (mounted) Navigator.of(context).pop((widget.targetId, widget.targetIp));
+        final effectivePeerIp = peerIpFromStatus.isNotEmpty
+            ? peerIpFromStatus
+            : widget.targetIp;
+        if (mounted) {
+          Navigator.of(context).pop((widget.targetId, effectivePeerIp));
+        }
         return;
       }
     }

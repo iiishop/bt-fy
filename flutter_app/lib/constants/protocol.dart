@@ -13,8 +13,8 @@ class Protocol {
   static const int staTcpPort = 12345;
 
   /// 心跳超时视为离线（秒）
-  static const int heartbeatTimeoutSeconds = 90;
+  static const int heartbeatTimeoutSeconds = 15;
 
-  /// 设备广播心跳间隔约 30 秒
-  static const int heartbeatIntervalSeconds = 30;
+  /// 设备广播心跳间隔约 4 秒（与 ESP 端 sta_services.rs 一致）
+  static const int heartbeatIntervalSeconds = 4;
 }

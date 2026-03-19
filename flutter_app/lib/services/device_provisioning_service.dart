@@ -8,6 +8,18 @@ import '../models/wifi_network.dart';
 
 /// 配网阶段：连接设备热点后，通过 TCP 发送 identify / config（设计 5.1）
 class DeviceProvisioningService {
+  /// 统一提取错误信息：优先 message，回退 reason，再回退 code。
+  static String? pickErrorMessage(Map<String, dynamic>? payload) {
+    if (payload == null) return null;
+    final message = payload['message']?.toString().trim();
+    if (message != null && message.isNotEmpty) return message;
+    final reason = payload['reason']?.toString().trim();
+    if (reason != null && reason.isNotEmpty) return reason;
+    final code = payload['code']?.toString().trim();
+    if (code != null && code.isNotEmpty) return code;
+    return null;
+  }
+
   /// 请求设备身份（AP 模式下，设备 IP 为 deviceApGateway）
   /// 返回 null 表示失败；若需错误信息可传 [onError]。
   Future<Map<String, dynamic>?> identify({
@@ -57,7 +69,14 @@ class DeviceProvisioningService {
     String host = Protocol.deviceApGateway,
     int port = Protocol.apTcpPort,
   }) async {
-    if (networks.isEmpty) return {'status': 'error', 'reason': 'No networks'};
+    if (networks.isEmpty) {
+      return {
+        'status': 'error',
+        'code': 'no_networks',
+        'message': 'No networks',
+        'reason': 'No networks',
+      };
+    }
     try {
       final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 8));
       try {
@@ -81,15 +100,34 @@ class DeviceProvisioningService {
             .take(1)
             .toList()
             .timeout(const Duration(seconds: 15));
-        if (lines.isEmpty) return {'status': 'error', 'reason': '设备未返回数据'};
+        if (lines.isEmpty) {
+          return {
+            'status': 'error',
+            'code': 'empty_response',
+            'message': '设备未返回数据',
+            'reason': '设备未返回数据',
+          };
+        }
         return jsonDecode(lines.first) as Map<String, dynamic>? ?? {};
       } finally {
         socket.destroy();
       }
     } on SocketException catch (e) {
-      return {'status': 'error', 'reason': e.message};
+      final msg = e.message;
+      return {
+        'status': 'error',
+        'code': 'socket_error',
+        'message': msg,
+        'reason': msg,
+      };
     } on Exception catch (e) {
-      return {'status': 'error', 'reason': e.toString()};
+      final msg = e.toString();
+      return {
+        'status': 'error',
+        'code': 'config_exception',
+        'message': msg,
+        'reason': msg,
+      };
     }
   }
 }

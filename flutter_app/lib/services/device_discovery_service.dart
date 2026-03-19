@@ -8,8 +8,13 @@ import '../models/device.dart';
 
 /// STA 模式下：监听 UDP 广播（hello/heartbeat/binding），并通过 TCP 控制设备（设计 5.2）
 class DeviceDiscoveryService {
-  RawDatagramSocket? _udpSocket;
-  StreamSubscription<RawSocketEvent>? _sub;
+  static RawDatagramSocket? _sharedUdpSocket;
+  static StreamSubscription<RawSocketEvent>? _sharedSub;
+  static final Map<int, DeviceDiscoveryService> _listeners = {};
+  static int _nextListenerId = 1;
+
+  final int _listenerId = _nextListenerId++;
+  bool _subscribed = false;
   final void Function(Device device)? onDeviceSeen;
   /// evt=binding 时回调 (deviceId, ip, bindToken)，用于手机回信完成绑定
   final void Function(String deviceId, String ip, String bindToken)? onBindingSeen;
@@ -18,17 +23,27 @@ class DeviceDiscoveryService {
 
   /// 开始监听 UDP 广播（端口 12345）
   Future<bool> startListening() async {
-    if (_udpSocket != null) return true;
+    if (_subscribed) return true;
     try {
-      _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, Protocol.staUdpPort);
-      _udpSocket!.broadcastEnabled = true;
-      _sub = _udpSocket!.listen((event) {
-        if (event != RawSocketEvent.read) return;
-        final dgram = _udpSocket!.receive();
-        if (dgram == null) return;
-        final fromIp = dgram.address.address;
-        _handleBroadcast(dgram.data, fromIp);
-      });
+      if (_sharedUdpSocket == null) {
+        _sharedUdpSocket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          Protocol.staUdpPort,
+        );
+        _sharedUdpSocket!.broadcastEnabled = true;
+        _sharedSub = _sharedUdpSocket!.listen((event) {
+          if (event != RawSocketEvent.read) return;
+          final dgram = _sharedUdpSocket!.receive();
+          if (dgram == null) return;
+          final fromIp = dgram.address.address;
+          final snapshot = List<DeviceDiscoveryService>.from(_listeners.values);
+          for (final listener in snapshot) {
+            listener._handleBroadcast(dgram.data, fromIp);
+          }
+        });
+      }
+      _listeners[_listenerId] = this;
+      _subscribed = true;
       return true;
     } on SocketException catch (_) {
       return false;
@@ -67,10 +82,14 @@ class DeviceDiscoveryService {
   }
 
   void stopListening() {
-    _sub?.cancel();
-    _sub = null;
-    _udpSocket?.close();
-    _udpSocket = null;
+    if (!_subscribed) return;
+    _listeners.remove(_listenerId);
+    _subscribed = false;
+    if (_listeners.isNotEmpty) return;
+    _sharedSub?.cancel();
+    _sharedSub = null;
+    _sharedUdpSocket?.close();
+    _sharedUdpSocket = null;
   }
 
   /// 通过 TCP 发送控制指令（设计 5.2）
@@ -141,6 +160,11 @@ class DeviceDiscoveryService {
   /// 接受配对（向对方 ESP 发送 pair_accepted）
   static Future<Map<String, dynamic>> acceptPair(String host, String fromDeviceId, {int port = Protocol.staTcpPort}) {
     return sendCommand(host, port, {'cmd': 'accept_pair', 'from_device_id': fromDeviceId});
+  }
+
+  /// 拒绝配对（从 pending 列表移除）
+  static Future<Map<String, dynamic>> rejectPair(String host, String fromDeviceId, {int port = Protocol.staTcpPort}) {
+    return sendCommand(host, port, {'cmd': 'reject_pair', 'from_device_id': fromDeviceId});
   }
 
   /// 查询本设备当前配对对象（用于 A 端轮询是否已被 B 接受）
