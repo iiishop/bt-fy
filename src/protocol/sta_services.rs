@@ -78,6 +78,7 @@ pub fn spawn_sta_services_on_connect(
 }
 
 const BINDING_INTERVAL_SECS: u64 = 4;
+const MAX_PENDING_PAIR_REQUESTS: usize = 64;
 
 fn run_udp_broadcast(
     device_id: String,
@@ -111,6 +112,15 @@ fn run_udp_broadcast(
                 "ip": sta_ip,
                 "ssid": sta_ssid.as_deref().unwrap_or(""),
                 "bindToken": token,
+            });
+            let _ = socket.send_to(msg.to_string().as_bytes(), dest);
+        } else {
+            // Keep discoverability even when no bind token is available.
+            let msg = serde_json::json!({
+                "evt": "hello",
+                "id": device_id,
+                "ip": sta_ip,
+                "ssid": sta_ssid.as_deref().unwrap_or(""),
             });
             let _ = socket.send_to(msg.to_string().as_bytes(), dest);
         }
@@ -373,23 +383,59 @@ fn process_sta_command(
                             line.push(buf[0]);
                         }
                     }
-                    let resp = String::from_utf8_lossy(&line);
-                    // Target may respond with:
-                    // - {"status":"ok","message":"pending"} (request queued, NOT paired yet)
-                    // - {"status":"ok","message":"pair_accepted"...} or similar when paired (only after B accepts)
-                    // We must NOT treat "status":"ok" as pairing success.
-                    if resp.contains("pair_accepted") {
+                    if line.is_empty() {
+                        return error_response(
+                            "empty_target_response",
+                            "empty response from target device",
+                        );
+                    }
+                    let resp_str = String::from_utf8_lossy(&line).to_string();
+                    let resp_json: serde_json::Value = match serde_json::from_str(&resp_str) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            return error_response(
+                                "invalid_target_response",
+                                "invalid json from target device",
+                            )
+                        }
+                    };
+                    let status = resp_json.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                    let message = resp_json.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                    if status == "ok" && message == "pair_accepted" {
                         let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                         state.1 = Some(target_device_id.to_string());
-                        state.2 = Some(target_ip.to_string());
-                    } else {
-                        // Even if it's pending, we still know the peer IP to use later.
+                        let peer_ip = if let Some(v) = resp_json.get("peer_ip").and_then(|v| v.as_str()) {
+                            if !v.is_empty() { v.to_string() } else { target_ip.to_string() }
+                        } else {
+                            target_ip.to_string()
+                        };
+                        state.2 = Some(peer_ip.clone());
+                        return serde_json::json!({
+                            "status":"ok",
+                            "message":"pair_accepted",
+                            "peer_ip": peer_ip
+                        }).to_string();
+                    }
+                    if status == "ok" && message == "pending" {
+                        // Pending is not paired yet, but we still know the peer IP.
                         let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
-                        // pending 不是 paired：清理历史 paired_device，避免状态混乱
                         state.1 = None;
                         state.2 = Some(target_ip.to_string());
+                        return serde_json::json!({"status":"ok","message":"pending"}).to_string();
                     }
-                    return r#"{"status":"ok"}"#.to_string();
+                    if status == "error" {
+                        let code = resp_json.get("code").and_then(|v| v.as_str()).unwrap_or("target_error");
+                        let reason = resp_json
+                            .get("reason")
+                            .or_else(|| resp_json.get("message"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("target returned error");
+                        return error_response(code, reason);
+                    }
+                    return error_response(
+                        "unexpected_target_response",
+                        "unexpected target response status/message",
+                    );
                 }
                 return error_response(
                     "connect_target_failed",
@@ -401,6 +447,11 @@ fn process_sta_command(
                     .and_then(|a| a.to_string().split(':').next().map(String::from))
                     .unwrap_or_else(|| "0.0.0.0".to_string());
                 let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
+                state.0.retain(|(id, _)| id != from_id);
+                if state.0.len() >= MAX_PENDING_PAIR_REQUESTS {
+                    let drop_n = state.0.len() - MAX_PENDING_PAIR_REQUESTS + 1;
+                    state.0.drain(0..drop_n);
+                }
                 state.0.push((from_id.to_string(), from_ip));
                 return r#"{"status":"ok","message":"pending"}"#.to_string();
             }
@@ -622,7 +673,11 @@ fn process_sta_command(
                 let addr = format!("{}:{}", ip, STA_TCP_PORT);
                 if let Ok(addr_parsed) = addr.parse() {
                     if let Ok(mut other) = TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(5)) {
-                    let req = serde_json::json!({"cmd":"pair_accepted","device_id": device_id});
+                    let req = serde_json::json!({
+                        "cmd":"pair_accepted",
+                        "device_id": device_id,
+                        "peer_ip": ip
+                    });
                     let _ = writeln!(other, "{}", req);
                     let _ = other.flush();
                 }
@@ -644,7 +699,11 @@ fn process_sta_command(
                 state.1 = Some(peer_id.to_string());
                 // Ensure initiator stores the *real* peer_ip, not a potentially stale target_ip.
                 // For pair_accepted, TCP client is the remote (acceptor) device.
-                if let Some(pa) = peer_addr {
+                if let Some(req_ip) = json.get("peer_ip").and_then(|v| v.as_str()) {
+                    if !req_ip.is_empty() {
+                        state.2 = Some(req_ip.to_string());
+                    }
+                } else if let Some(pa) = peer_addr {
                     let ip = pa.to_string().split(':').next().unwrap_or("").to_string();
                     if !ip.is_empty() {
                         state.2 = Some(ip);

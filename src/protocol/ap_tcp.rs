@@ -125,8 +125,12 @@ fn handle_ap_client(
         };
         let cmd = json.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
         if cmd == "config" {
-            // 配网：保存 bindToken；支持单条 ssid 或 networks 数组，按信号强度选最佳连接
-            let bind_token = json.get("phone").and_then(|v| v.as_str()).map(String::from);
+            // 配网：保存 bindToken；支持 bind_token（新）与 phone（旧兼容）字段。
+            let bind_token = json
+                .get("bind_token")
+                .or_else(|| json.get("phone"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
             if let Some(ref token) = bind_token {
                 let mut guard = pending_bind_token.lock().unwrap();
                 *guard = Some(token.clone());

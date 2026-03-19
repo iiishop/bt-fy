@@ -65,6 +65,11 @@ class AppStrings {
     'device_not_found':
         'Device not found. Ensure the peer is on the same LAN and bound.',
     'pair_request_sent': 'Pair request sent. Waiting for peer to accept.',
+    'pair_request_pending': 'Pair request queued on peer. Waiting for acceptance.',
+    'pair_request_accepted_immediate':
+        'Peer accepted immediately. Pairing completed.',
+    'pair_request_unexpected_response':
+        'Peer response is unexpected. Please retry.',
     'pair_request_failed': 'Send pair request failed',
     'pair_waiting_title': 'Waiting for peer',
     'pair_waiting_message': 'Waiting for device %1 to accept or reject…',
@@ -199,6 +204,9 @@ class AppStrings {
     'my_device_ip_empty': '本设备 IP 为空，请返回首页等待设备上线',
     'device_not_found': '未发现该设备，请确保对方设备在同一局域网并已绑定',
     'pair_request_sent': '配对请求已发送，等待对方同意',
+    'pair_request_pending': '配对请求已进入对方待处理，等待同意。',
+    'pair_request_accepted_immediate': '对方已立即同意，配对已完成。',
+    'pair_request_unexpected_response': '对方返回状态异常，请重试。',
     'pair_request_failed': '发起配对失败',
     'pair_waiting_title': '等待对方',
     'pair_waiting_message': '等待设备 %1 同意或拒绝…',

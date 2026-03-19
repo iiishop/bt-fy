@@ -605,11 +605,37 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       );
       return;
     }
+    final message = (res['message'] as String? ?? '').trim();
+    if (message.isNotEmpty && message != 'pending' && message != 'pair_accepted') {
+      setState(() => _busy = false);
+      _showError(l10n.t('pair_request_unexpected_response'));
+      return;
+    }
+    if (message == 'pair_accepted') {
+      final peerIpFromRes = (res['peer_ip'] as String? ?? '').trim();
+      final effectivePeerIp = peerIpFromRes.isNotEmpty ? peerIpFromRes : targetIp;
+      await _applyPairSuccess(targetId, effectivePeerIp);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('pair_request_accepted_immediate'))),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.t('pair_request_pending'))),
+    );
     final result = await _showPairWaitingDialog(targetId);
     if (!mounted) return;
     setState(() => _busy = false);
     if (result == null) return;
     final (peerId, peerIp) = result;
+    await _applyPairSuccess(peerId, peerIp);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('pair_success'))));
+  }
+
+  Future<void> _applyPairSuccess(String peerId, String peerIp) async {
     await _deviceStorage.save(_device.copyWith(pairedWithDeviceId: peerId));
     final peerDevice = Device(
       deviceId: peerId,
@@ -621,9 +647,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     );
     await _deviceStorage.save(peerDevice);
     DiscoveredDevicesStore.update(peerId, peerIp);
-    setState(() => _device = _device.copyWith(pairedWithDeviceId: peerId));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('pair_success'))));
+    if (mounted) {
+      setState(() => _device = _device.copyWith(pairedWithDeviceId: peerId));
+    }
   }
 
   Future<(String, String)?> _showPairWaitingDialog(String targetId) async {

@@ -76,9 +76,9 @@ pub const SERVO_PULSE_MAX_US: u32 = 2500;
 // ========================================
 
 /// 距离 < 此值(mm) 时开始挥动
-pub const TOF_THRESHOLD_START_MM: u16 = 110;
+pub const TOF_THRESHOLD_START_MM: u16 = 1100;
 /// 距离 ≤ 此值(mm) 时用较快周期（舵机最快速度）
-pub const TOF_THRESHOLD_FAST_MM: u16 = 60;
+pub const TOF_THRESHOLD_FAST_MM: u16 = 300;
 /// 刚触发时的周期（ms），一整圈 25°↔130°↔25°
 pub const TOF_PERIOD_SLOW_MS: u64 = 2000;
 /// 较快周期（≤60mm 时），越小越快

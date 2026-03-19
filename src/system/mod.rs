@@ -298,8 +298,118 @@ impl ButterflySystem {
             let servo_set_thd = servo_set.clone();
             let servo2_set_thd = servo2_set.clone();
             let test_mode_thd = Arc::clone(&test_mode);
+            let sync_running_thd = Arc::clone(&sync_running);
             let pair_state_thd = Arc::clone(&pair_state);
             let sta_tcp_port = crate::system::config::STA_TCP_PORT;
+
+            // After pairing:
+            // - Trigger: send only "start" and "stop" to the peer.
+            // - Servo speed on the peer is handled internally (fixed "middle" speed).
+            enum SyncCmd {
+                Start,
+                Stop,
+            }
+            let (sync_cmd_tx, sync_cmd_rx) = mpsc::sync_channel::<SyncCmd>(1);
+            let pair_state_for_sender = Arc::clone(&pair_state_thd);
+            std::thread::Builder::new()
+                .name("sync-sender".into())
+                .spawn(move || {
+                    // Keep one TCP connection to the peer and reuse it.
+                    // This avoids "one message => one connection => too many threads" issues.
+                    let mut stream_opt: Option<std::net::TcpStream> = None;
+                    let mut stream_peer_ip: Option<String> = None;
+
+                    loop {
+                        let cmd = match sync_cmd_rx.recv() {
+                            Ok(c) => c,
+                            Err(_) => break,
+                        };
+
+                        let (paired_with_opt, peer_ip_opt) = pair_state_for_sender
+                            .lock()
+                            .ok()
+                            .map(|g| (g.1.clone(), g.2.clone()))
+                            .unwrap_or((None, None));
+                        let (Some(_paired_with), Some(peer_ip)) = (paired_with_opt, peer_ip_opt) else {
+                            // No pairing yet: close any existing stream and wait.
+                            stream_opt = None;
+                            stream_peer_ip = None;
+                            continue;
+                        };
+
+                        let need_reconnect = match stream_peer_ip.as_deref() {
+                            Some(ip) if ip == peer_ip => false,
+                            _ => true,
+                        } || stream_opt.is_none();
+
+                        if need_reconnect {
+                            stream_opt = None;
+                            stream_peer_ip = Some(peer_ip.clone());
+
+                            let addr = format!("{}:{}", peer_ip, sta_tcp_port);
+                            if let Ok(addr_parsed) = addr.parse::<std::net::SocketAddr>() {
+                                if let Ok(mut s) =
+                                    std::net::TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(2))
+                                {
+                                    let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
+                                    let _ = s.set_read_timeout(Some(Duration::from_secs(1)));
+                                    stream_opt = Some(s);
+                                } else {
+                                    // Can't connect: will retry on next command.
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        let Some(stream) = stream_opt.as_mut() else {
+                            continue;
+                        };
+
+                        // Write command
+                        match cmd {
+                            SyncCmd::Start => {
+                                if writeln!(stream, "{}", r#"{"cmd":"sync_start"}"#).is_err() {
+                                    stream_opt = None;
+                                    continue;
+                                }
+                            }
+                            SyncCmd::Stop => {
+                                if writeln!(stream, "{}", r#"{"cmd":"sync_stop"}"#).is_err() {
+                                    stream_opt = None;
+                                    continue;
+                                }
+                            }
+                        };
+                        let _ = stream.flush();
+
+                        // Read one-line response to keep TCP recv buffer healthy.
+                        // (The STA peer replies for every command.)
+                        let mut line = Vec::<u8>::new();
+                        let mut buf = [0u8; 1];
+                        loop {
+                            match std::io::Read::read(stream, &mut buf) {
+                                Ok(0) => break, // EOF
+                                Ok(_) => {
+                                    if buf[0] == b'\n' {
+                                        break;
+                                    }
+                                    if buf[0] != b'\r' {
+                                        line.push(buf[0]);
+                                    }
+                                }
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::TimedOut {
+                                        break;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                })?;
+
             std::thread::Builder::new()
                 .name("test-mode".into())
                 .spawn(move || {
@@ -320,6 +430,13 @@ impl ButterflySystem {
 
                     loop {
                         std::thread::sleep(Duration::from_millis(TICK_MS));
+                        // When remote sync is running (B side), let sync_start thread own the servos.
+                        // Avoid sensor-based test-mode from fighting with remote control.
+                        if *sync_running_thd.lock().unwrap_or_else(|e| e.into_inner()) {
+                            was_triggered = false;
+                            idle_applied = false;
+                            continue;
+                        }
                         if !test_mode_thd.load(Ordering::Relaxed) {
                             was_triggered = false;
                             idle_applied = false;
@@ -328,8 +445,20 @@ impl ButterflySystem {
                         let d = (distance_thd)();
                         // Only trigger when sensor reports valid near range (ignore 0 = disconnected)
                         if d >= THRESHOLD_MIN_MM && d < TOF_THRESHOLD_START_MM {
-                            idle_applied = false;
-                            was_triggered = true;
+                            if !was_triggered {
+                                // rising edge: notify peer once
+                                idle_applied = false;
+                                was_triggered = true;
+                                let paired_with_opt = pair_state_thd
+                                    .lock()
+                                    .ok()
+                                    .and_then(|g| g.1.clone());
+                                if paired_with_opt.is_some() {
+                                    let _ = sync_cmd_tx.try_send(SyncCmd::Start);
+                                }
+                            } else {
+                                idle_applied = false;
+                            }
                             let period_ms = if d <= TOF_THRESHOLD_FAST_MM {
                                 TOF_PERIOD_FAST_MS
                             } else {
@@ -353,28 +482,6 @@ impl ButterflySystem {
                             };
                             let _ = (servo_set_thd)(angle0);
                             let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE);
-                            // 每 tick 向 B 发当前 phase，B 的 servo0 与 A 完全同步；独立线程发避免阻塞
-                            let peer_ip_opt = pair_state_thd.lock().ok().and_then(|g| g.2.clone());
-                            if let Some(peer_ip) = peer_ip_opt {
-                                let port = sta_tcp_port;
-                                let ph = phase;
-                                std::thread::spawn(move || {
-                                    let addr = format!("{}:{}", peer_ip, port);
-                                    if let Ok(addr_parsed) = addr.parse::<std::net::SocketAddr>() {
-                                        if let Ok(mut stream) =
-                                            std::net::TcpStream::connect_timeout(
-                                                &addr_parsed,
-                                                Duration::from_secs(2),
-                                            )
-                                        {
-                                            let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-                                            let body = serde_json::json!({"cmd":"sync_tick","phase":ph});
-                                            let _ = writeln!(stream, "{}", body);
-                                            let _ = stream.flush();
-                                        }
-                                    }
-                                });
-                            }
                         } else {
                             if was_triggered {
                                 // 根据当前 phase 算当前角度，离 25 或 130 哪个更近就停在哪
@@ -389,25 +496,13 @@ impl ButterflySystem {
                                 let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE); // 舵机1 回 90°
                                 idle_applied = true;
                                 phase = 0.0;
-                                // 通知 B 停止同步
-                                let peer_ip_opt = pair_state_thd.lock().ok().and_then(|g| g.2.clone());
-                                if let Some(peer_ip) = peer_ip_opt {
-                                    let port = sta_tcp_port;
-                                    std::thread::spawn(move || {
-                                        let addr = format!("{}:{}", peer_ip, port);
-                                        if let Ok(addr_parsed) = addr.parse::<std::net::SocketAddr>() {
-                                            if let Ok(mut stream) =
-                                                std::net::TcpStream::connect_timeout(
-                                                    &addr_parsed,
-                                                    Duration::from_secs(2),
-                                                )
-                                            {
-                                                let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-                                                let _ = writeln!(stream, "{}", r#"{"cmd":"sync_stop"}"#);
-                                                let _ = stream.flush();
-                                            }
-                                        }
-                                    });
+                                // falling edge: notify peer once
+                                let paired_with_opt = pair_state_thd
+                                    .lock()
+                                    .ok()
+                                    .and_then(|g| g.1.clone());
+                                if paired_with_opt.is_some() {
+                                    let _ = sync_cmd_tx.try_send(SyncCmd::Stop);
                                 }
                             }
                             was_triggered = false;

@@ -89,7 +89,11 @@ class DeviceProvisioningService {
           'cmd': 'config',
           'networks': list,
         };
-        if (bindToken != null && bindToken.isNotEmpty) body['phone'] = bindToken;
+        if (bindToken != null && bindToken.isNotEmpty) {
+          body['bind_token'] = bindToken;
+          // Backward compatibility with older firmware.
+          body['phone'] = bindToken;
+        }
         socket.write('${jsonEncode(body)}\n');
         await socket.flush();
         // 只等一行 "connecting" 即可，随后手机可离开热点
