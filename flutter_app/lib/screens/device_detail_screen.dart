@@ -699,7 +699,7 @@ class _PairWaitingDialog extends StatefulWidget {
 }
 
 class _PairWaitingDialogState extends State<_PairWaitingDialog> {
-  static const _pollInterval = Duration(seconds: 2);
+  static const _pollInterval = Duration(seconds: 3);
   static const _timeout = Duration(seconds: 90);
   DateTime? _deadline;
 

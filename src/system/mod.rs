@@ -14,14 +14,17 @@ use esp_idf_hal::{
     prelude::*,
 };
 use esp_idf_hal::ledc::LowSpeed;
-use esp_idf_svc::{eventloop::EspSystemEventLoop, log::EspLogger, nvs::EspDefaultNvsPartition};
+use esp_idf_svc::{eventloop::EspSystemEventLoop, log::EspLogger, nvs::{EspDefaultNvs, EspDefaultNvsPartition}};
 use log::info;
 use std::sync::Arc;
 
 use crate::{
     dns::DnsService,
     hardware::{self, ContinuousServoService, vl53l1x::VL53L1XService, ServoService, TofSensor, VL53L0XService},
-    protocol::{spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PairState, PendingBindToken, PendingConfigDone, SyncRunning, TriggerState, WifiListStore},
+    protocol::{
+        spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PairState, PendingBindToken,
+        PendingConfigDone, SyncRunning, TriggerState, WifiListStore, BindTokenStore,
+    },
     system::config::{
         AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN,
         TOF_PERIOD_FAST_MS, TOF_PERIOD_SLOW_MS,
@@ -249,6 +252,8 @@ impl ButterflySystem {
         let trigger_state: TriggerState = Arc::new(Mutex::new((0u64, 0u32)));
         let sync_running: SyncRunning = Arc::new(Mutex::new(false));
         let wifi_list_store: WifiListStore = Arc::new(Mutex::new(vec![]));
+        // Persist/restore binding state across power cycles.
+        let nvs_handle: Arc<Mutex<EspDefaultNvsPartition>> = Arc::new(Mutex::new(self._nvs.clone()));
 
         // Configure hardware status for web service
         if self.sensor.is_some() || self.servo.is_some() || self.servo2.is_some() {
@@ -303,27 +308,28 @@ impl ButterflySystem {
             let sta_tcp_port = crate::system::config::STA_TCP_PORT;
 
             // After pairing:
-            // - Trigger: send only "start" and "stop" to the peer.
+            // - Trigger: drive peer sync via an AtomicBool (desired running), not a depth-1 channel.
+            //   sync_channel + try_send 会静默丢 Stop，导致对端 sync 停不下来。
+            // - sync-sender 轮询 desired，与已成功写入 TCP 的 last_sent 比较；写失败则下轮重试。
             // - Servo speed on the peer is handled internally (fixed "middle" speed).
-            enum SyncCmd {
-                Start,
-                Stop,
-            }
-            let (sync_cmd_tx, sync_cmd_rx) = mpsc::sync_channel::<SyncCmd>(1);
+            let remote_peer_sync_desired = Arc::new(AtomicBool::new(false));
+            let remote_desired_for_sender = Arc::clone(&remote_peer_sync_desired);
             let pair_state_for_sender = Arc::clone(&pair_state_thd);
             std::thread::Builder::new()
                 .name("sync-sender".into())
                 .spawn(move || {
                     // Keep one TCP connection to the peer and reuse it.
-                    // This avoids "one message => one connection => too many threads" issues.
                     let mut stream_opt: Option<std::net::TcpStream> = None;
                     let mut stream_peer_ip: Option<String> = None;
+                    // 最近一次收到对端 ACK 后确认的「是否在跑 remote sync」。
+                    let mut last_confirmed_running = false;
+                    // 用于让 ACK 能对应到一次请求。
+                    let mut req_seq: u64 = 0;
 
                     loop {
-                        let cmd = match sync_cmd_rx.recv() {
-                            Ok(c) => c,
-                            Err(_) => break,
-                        };
+                        std::thread::sleep(Duration::from_millis(50));
+
+                        let desired = remote_desired_for_sender.load(Ordering::Acquire);
 
                         let (paired_with_opt, peer_ip_opt) = pair_state_for_sender
                             .lock()
@@ -331,11 +337,15 @@ impl ButterflySystem {
                             .map(|g| (g.1.clone(), g.2.clone()))
                             .unwrap_or((None, None));
                         let (Some(_paired_with), Some(peer_ip)) = (paired_with_opt, peer_ip_opt) else {
-                            // No pairing yet: close any existing stream and wait.
                             stream_opt = None;
                             stream_peer_ip = None;
+                            last_confirmed_running = false;
                             continue;
                         };
+
+                        if desired == last_confirmed_running {
+                            continue;
+                        }
 
                         let need_reconnect = match stream_peer_ip.as_deref() {
                             Some(ip) if ip == peer_ip => false,
@@ -352,10 +362,9 @@ impl ButterflySystem {
                                     std::net::TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(2))
                                 {
                                     let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
-                                    let _ = s.set_read_timeout(Some(Duration::from_secs(1)));
+                                    let _ = s.set_read_timeout(Some(Duration::from_millis(400)));
                                     stream_opt = Some(s);
                                 } else {
-                                    // Can't connect: will retry on next command.
                                     continue;
                                 }
                             } else {
@@ -367,49 +376,68 @@ impl ButterflySystem {
                             continue;
                         };
 
-                        // Write command
-                        match cmd {
-                            SyncCmd::Start => {
-                                if writeln!(stream, "{}", r#"{"cmd":"sync_start"}"#).is_err() {
-                                    stream_opt = None;
-                                    continue;
-                                }
-                            }
-                            SyncCmd::Stop => {
-                                if writeln!(stream, "{}", r#"{"cmd":"sync_stop"}"#).is_err() {
-                                    stream_opt = None;
-                                    continue;
-                                }
-                            }
+                        req_seq = req_seq.wrapping_add(1);
+                        let expected_ack = if desired { "sync_start" } else { "sync_stop" };
+                        let cmd_line = if desired {
+                            format!(r#"{{"cmd":"sync_start","req_id":{}}}"#, req_seq)
+                        } else {
+                            format!(r#"{{"cmd":"sync_stop","req_id":{}}}"#, req_seq)
                         };
-                        let _ = stream.flush();
+
+                        if writeln!(stream, "{}", cmd_line).is_err() || stream.flush().is_err() {
+                            stream_opt = None;
+                            continue;
+                        }
 
                         // Read one-line response to keep TCP recv buffer healthy.
-                        // (The STA peer replies for every command.)
-                        let mut line = Vec::<u8>::new();
+                        let start = std::time::Instant::now();
                         let mut buf = [0u8; 1];
-                        loop {
+                        let mut resp = Vec::<u8>::new();
+                        while start.elapsed() < Duration::from_millis(600) {
                             match std::io::Read::read(stream, &mut buf) {
-                                Ok(0) => break, // EOF
+                                Ok(0) => break,
                                 Ok(_) => {
                                     if buf[0] == b'\n' {
                                         break;
                                     }
                                     if buf[0] != b'\r' {
-                                        line.push(buf[0]);
+                                        resp.push(buf[0]);
                                     }
                                 }
-                                Err(e) => {
-                                    if e.kind() == std::io::ErrorKind::TimedOut {
-                                        break;
-                                    }
-                                    break;
-                                }
+                                Err(_) => break,
                             }
+                        }
+
+                        let resp_str = String::from_utf8_lossy(&resp).trim().to_string();
+                        let mut acked = false;
+                        if !resp_str.is_empty() {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp_str) {
+                                let status_ok = v
+                                    .get("status")
+                                    .and_then(|x| x.as_str())
+                                    .map(|s| s == "ok")
+                                    .unwrap_or(false);
+                                let ack_ok = v
+                                    .get("ack")
+                                    .and_then(|x| x.as_str())
+                                    .map(|s| s == expected_ack)
+                                    .unwrap_or(false);
+                                let ack_req_id = v.get("req_id").and_then(|x| x.as_u64());
+                                let req_match = ack_req_id == Some(req_seq);
+                                acked = status_ok && ack_ok && req_match;
+                            }
+                        }
+
+                        if acked {
+                            last_confirmed_running = desired;
+                        } else {
+                            // 未收到匹配 ACK：认为链路当前不可靠，下轮继续重发（同 desired）。
+                            stream_opt = None;
                         }
                     }
                 })?;
 
+            let remote_desired_for_test = Arc::clone(&remote_peer_sync_desired);
             std::thread::Builder::new()
                 .name("test-mode".into())
                 .spawn(move || {
@@ -435,6 +463,9 @@ impl ButterflySystem {
                         if *sync_running_thd.lock().unwrap_or_else(|e| e.into_inner()) {
                             was_triggered = false;
                             idle_applied = false;
+                            // 如果本机正在被远端 sync 控制，则不要继续把“我们曾经触发过的期望状态”
+                            // 维持给对端；否则对端可能一直收到 sync_start/无法停止。
+                            remote_desired_for_test.store(false, Ordering::Release);
                             continue;
                         }
                         if !test_mode_thd.load(Ordering::Relaxed) {
@@ -454,7 +485,7 @@ impl ButterflySystem {
                                     .ok()
                                     .and_then(|g| g.1.clone());
                                 if paired_with_opt.is_some() {
-                                    let _ = sync_cmd_tx.try_send(SyncCmd::Start);
+                                    remote_desired_for_test.store(true, Ordering::Release);
                                 }
                             } else {
                                 idle_applied = false;
@@ -502,7 +533,7 @@ impl ButterflySystem {
                                     .ok()
                                     .and_then(|g| g.1.clone());
                                 if paired_with_opt.is_some() {
-                                    let _ = sync_cmd_tx.try_send(SyncCmd::Stop);
+                                    remote_desired_for_test.store(false, Ordering::Release);
                                 }
                             }
                             was_triggered = false;
@@ -548,10 +579,69 @@ impl ButterflySystem {
         let trigger_state_clone = Arc::clone(&trigger_state);
         let sync_running_clone = Arc::clone(&sync_running);
         let wifi_list_store_clone = Arc::clone(&wifi_list_store);
+        let bind_token_store: BindTokenStore = Arc::new(Mutex::new(None));
+
+        // Auto-start STA services only when this device is *already bound* (NVS).
+        // Otherwise provisioning/add-device flow may be broken:
+        // - provisioning needs STA services to broadcast `evt=binding` using the fresh `bind_token`
+        // - if we start early with `bind_token=None` and set STA_SERVICES_STARTED, later provisioning spawn will be skipped
+        let auto_bound = {
+            match EspDefaultNvs::new(self._nvs.clone(), "bt_fy", true) {
+                Ok(store) => store
+                    .get_u8("binding.bound")
+                    .ok()
+                    .flatten()
+                    .map(|v| v != 0)
+                    .unwrap_or(false),
+                Err(_) => false,
+            }
+        };
+
+        if auto_bound {
+            // Only mark STA_SERVICES_STARTED after we have a valid STA connection
+            // (otherwise we could block the provisioning path forever).
+            match self.wifi.execute(WifiCommand::GetStatus) {
+                WifiResponse::Status(Some(sta)) => {
+                    if !STA_SERVICES_STARTED.swap(true, Ordering::Relaxed) {
+                        let did = self.wifi.get_device_id();
+                        // Best-effort: bind_token is not required when binding_state is restored from NVS.
+                        spawn_sta_services_on_connect(
+                            did,
+                            sta.ip.clone(),
+                            Some(sta.ssid.clone()),
+                            servo_for_sta.clone(),
+                            servo2_for_sta.clone(),
+                            Arc::clone(&binding_state_clone),
+                            Arc::clone(&pair_state_clone),
+                            Arc::clone(&trigger_state_clone),
+                            Arc::clone(&sync_running_clone),
+                            Arc::clone(&wifi_list_store_clone),
+                            Arc::clone(&bind_token_store),
+                            Arc::clone(&nvs_handle),
+                        );
+                        info!(
+                            "Auto-started STA services on boot (sta.ip={}, sta.ssid={})",
+                            sta.ip, sta.ssid
+                        );
+                    } else {
+                        log::warn!("STA services already running (auto-start path)");
+                    }
+                }
+                _ => {
+                    info!("Skip auto-start STA services on boot: STA not connected yet");
+                }
+            }
+        } else {
+            info!("Skip auto-start STA services on boot: not bound in NVS");
+        }
+
         std::thread::Builder::new()
             .name("sta-starter".into())
             .spawn(move || {
                 while let Ok((did, sta_ip, bind_token, sta_ssid)) = sta_start_rx.recv() {
+                    // Make provisioning token available to the already-running UDP broadcaster.
+                    *bind_token_store.lock().unwrap() = bind_token;
+
                     if STA_SERVICES_STARTED.swap(true, Ordering::Relaxed) {
                         log::warn!("STA services already running, skip duplicate spawn");
                         continue;
@@ -559,7 +649,6 @@ impl ButterflySystem {
                     spawn_sta_services_on_connect(
                         did,
                         sta_ip,
-                        bind_token,
                         sta_ssid,
                         servo_for_sta.clone(),
                         servo2_for_sta.clone(),
@@ -568,6 +657,8 @@ impl ButterflySystem {
                         Arc::clone(&trigger_state_clone),
                         Arc::clone(&sync_running_clone),
                         Arc::clone(&wifi_list_store_clone),
+                        Arc::clone(&bind_token_store),
+                        Arc::clone(&nvs_handle),
                     );
                 }
             })?;
@@ -587,6 +678,11 @@ impl ButterflySystem {
                     if let WifiResponse::Connect(Ok(ref sta)) = response {
                         let did = wifi.get_device_id();
                         let bind_token = pending_bind_token_loop.lock().unwrap().take();
+                        if let Some(ref t) = bind_token {
+                            info!("Connect OK: bind_token passed to STA services (len={})", t.len());
+                        } else {
+                            info!("Connect OK: bind_token is None (pending_bind_token was empty)");
+                        }
                         if let Some(tx) = pending_config_done_loop.lock().unwrap().take() {
                             let _ = tx.send((did.clone(), sta.ip.clone(), did.clone()));
                         }

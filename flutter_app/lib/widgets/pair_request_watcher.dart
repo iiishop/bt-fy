@@ -36,9 +36,11 @@ class _PairRequestDialogData {
 class _PairRequestWatcherState extends State<PairRequestWatcher> {
   final DeviceStorageService _deviceStorage = DeviceStorageService();
 
+  static const _pollInterval = Duration(seconds: 4);
   Timer? _timer;
   bool _polling = false;
   bool _dialogOpen = false;
+  int _roundRobinCursor = 0;
 
   final ValueNotifier<_PairRequestDialogData?> _pendingNotifier =
       ValueNotifier<_PairRequestDialogData?>(null);
@@ -46,7 +48,7 @@ class _PairRequestWatcherState extends State<PairRequestWatcher> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _pollOnce());
+    _timer = Timer.periodic(_pollInterval, (_) => _pollOnce());
     _pollOnce();
   }
 
@@ -64,9 +66,16 @@ class _PairRequestWatcherState extends State<PairRequestWatcher> {
     try {
       final devices = await _deviceStorage.getAll();
       final currentTargetHost = _pendingNotifier.value?.targetHost;
-      final iterDevices = (_dialogOpen && currentTargetHost != null)
+      final candidates = (_dialogOpen && currentTargetHost != null)
           ? devices.where((d) => d.ipAddress == currentTargetHost).toList()
           : devices;
+      if (candidates.isEmpty) return;
+      final start = _roundRobinCursor % candidates.length;
+      final iterDevices = [
+        ...candidates.skip(start),
+        ...candidates.take(start),
+      ];
+      _roundRobinCursor = (_roundRobinCursor + 1) % candidates.length;
 
       for (final d in iterDevices) {
         final host = d.ipAddress;

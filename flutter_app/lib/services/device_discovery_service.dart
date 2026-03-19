@@ -12,6 +12,7 @@ class DeviceDiscoveryService {
   static StreamSubscription<RawSocketEvent>? _sharedSub;
   static final Map<int, DeviceDiscoveryService> _listeners = {};
   static int _nextListenerId = 1;
+  static final Map<String, Future<Map<String, dynamic>>> _inflightReadOnly = {};
 
   final int _listenerId = _nextListenerId++;
   bool _subscribed = false;
@@ -94,6 +95,26 @@ class DeviceDiscoveryService {
 
   /// 通过 TCP 发送控制指令（设计 5.2）
   static Future<Map<String, dynamic>> sendCommand(
+    String host,
+    int port,
+    Map<String, dynamic> command,
+  ) async {
+    final cmd = command['cmd'] as String? ?? '';
+    final readOnly = cmd == 'get_pair_status' || cmd == 'get_pending_pair_requests';
+    if (!readOnly) {
+      return _sendCommandInternal(host, port, command);
+    }
+    final key = '$host:$port:$cmd';
+    final existing = _inflightReadOnly[key];
+    if (existing != null) return existing;
+    final future = _sendCommandInternal(host, port, command).whenComplete(() {
+      _inflightReadOnly.remove(key);
+    });
+    _inflightReadOnly[key] = future;
+    return future;
+  }
+
+  static Future<Map<String, dynamic>> _sendCommandInternal(
     String host,
     int port,
     Map<String, dynamic> command,

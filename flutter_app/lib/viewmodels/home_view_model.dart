@@ -68,7 +68,7 @@ class HomeViewModel extends ChangeNotifier {
       statusTick.value = statusTick.value + 1;
     });
     _pairStatusTimer = Timer.periodic(
-      const Duration(seconds: 3),
+      const Duration(seconds: 5),
       (_) => unawaited(pollPairStatus()),
     );
   }
@@ -191,27 +191,50 @@ class HomeViewModel extends ChangeNotifier {
   void _onDeviceSeen(Device device) {
     final i = _devices.indexWhere((d) => d.deviceId == device.deviceId);
     if (i >= 0) {
-      if (!device.isBound) {
-        unawaited(_repository.deleteDevice(device.deviceId));
-        _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
-        _devices.removeAt(i);
-        DiscoveredDevicesStore.update(device.deviceId, device.ipAddress);
-        notifyListeners();
-        return;
+      final stored = _devices[i];
+
+      // ESP 在时序上可能会在短时间内发送 `hello`（isBound=false）：
+      // 这不应该把“已绑定的设备”瞬间从 bound 列表里删掉，否则 UI 会在刷新时抖动
+      // （你看到的：绑定后又变成 discovered / 成对后又变成只有 bound）。
+      //
+      // 所以：如果本地已是已绑定（含 peer shadow），则在收到 hello 时只更新在线信息，
+      // 不切换为 isBound=false、也不触发 delete。
+      if (!device.isBound && stored.isBound) {
+        final newIp = device.ipAddress.isEmpty || device.ipAddress == '0.0.0.0'
+            ? stored.ipAddress
+            : device.ipAddress;
+        _devices[i] = stored.copyWith(
+          ipAddress: newIp,
+          lastSeen: device.lastSeen,
+          isOnline: true,
+          // 保持 bound 状态不变，避免 UI 分类抖动
+          isBound: true,
+          lastConnectedSsid:
+              device.lastConnectedSsid ?? stored.lastConnectedSsid,
+        );
+        unawaited(_repository.saveDevice(_devices[i]));
+        _discoveredUnbound.remove(device.deviceId);
+      } else {
+        final newIp = device.ipAddress.isEmpty || device.ipAddress == '0.0.0.0'
+            ? stored.ipAddress
+            : device.ipAddress;
+        _devices[i] = stored.copyWith(
+          ipAddress: newIp,
+          lastSeen: device.lastSeen,
+          isOnline: true,
+          isBound: device.isBound,
+          lastConnectedSsid:
+              device.lastConnectedSsid ?? stored.lastConnectedSsid,
+        );
+        unawaited(_repository.saveDevice(_devices[i]));
+        _discoveredUnbound.remove(device.deviceId);
+        if (!device.isBound) {
+          // 极少数：本地记录本来就不是 bound，才允许按旧逻辑降级到 discovered。
+          unawaited(_repository.deleteDevice(device.deviceId));
+          _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
+          _devices.removeAt(i);
+        }
       }
-      final newIp = device.ipAddress.isEmpty || device.ipAddress == '0.0.0.0'
-          ? _devices[i].ipAddress
-          : device.ipAddress;
-      _devices[i] = _devices[i].copyWith(
-        ipAddress: newIp,
-        lastSeen: device.lastSeen,
-        isOnline: true,
-        isBound: device.isBound,
-        lastConnectedSsid:
-            device.lastConnectedSsid ?? _devices[i].lastConnectedSsid,
-      );
-      unawaited(_repository.saveDevice(_devices[i]));
-      _discoveredUnbound.remove(device.deviceId);
     } else if (!device.isBound) {
       _discoveredUnbound[device.deviceId] = device.copyWith(isBound: false);
     }

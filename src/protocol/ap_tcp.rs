@@ -132,6 +132,11 @@ fn handle_ap_client(
                 .and_then(|v| v.as_str())
                 .map(String::from);
             if let Some(ref token) = bind_token {
+                info!("AP TCP config bind_token received (len={})", token.len());
+            } else {
+                info!("AP TCP config bind_token missing/empty");
+            }
+            if let Some(ref token) = bind_token {
                 let mut guard = pending_bind_token.lock().unwrap();
                 *guard = Some(token.clone());
             }

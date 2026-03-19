@@ -4,9 +4,11 @@ use log::{info, warn};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+use esp_idf_svc::nvs::{EspDefaultNvs, EspDefaultNvsPartition};
 
 use crate::hardware::{ContinuousServoService, ServoService};
 use crate::system::config::{
@@ -16,6 +18,11 @@ use crate::system::config::{
 
 /// 绑定状态：是否已绑定、绑定的手机 ID
 pub type BindingState = Arc<Mutex<(bool, Option<String>)>>;
+
+type NvsHandle = Arc<Mutex<EspDefaultNvsPartition>>;
+
+/// provisioning 过程中由 AP config 下发、并被 UDP 广播线程持续读取的 bind_token
+pub type BindTokenStore = Arc<Mutex<Option<String>>>;
 
 /// 配对状态：待处理列表、已配对设备 ID、对方 IP（用于 remote_trigger）
 pub type PairState = Arc<Mutex<(Vec<(String, String)>, Option<String>, Option<String>)>>;
@@ -39,6 +46,120 @@ fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> 
     }
 }
 
+const NVS_BINDING_BOUND_KEY: &str = "binding.bound";
+const NVS_BINDING_PHONE_ID_KEY: &str = "binding.phone_id";
+const NVS_PAIR_PAIRED_WITH_KEY: &str = "pair.paired_with";
+const NVS_PAIR_PEER_IP_KEY: &str = "pair.peer_ip";
+
+fn load_binding_from_nvs(nvs: &Mutex<EspDefaultNvsPartition>) -> (bool, Option<String>) {
+    const NVS_NAMESPACE: &str = "bt_fy";
+
+    let partition = lock_or_recover(nvs, "nvs").clone();
+    let store = EspDefaultNvs::new(partition, NVS_NAMESPACE, true).ok();
+    let Some(store) = store else {
+        return (false, None);
+    };
+
+    let bound_u8 = store
+        .get_u8(NVS_BINDING_BOUND_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+    let bound = bound_u8 != 0;
+
+    // NVS get_str needs an output buffer.
+    let mut buf = [0u8; 128];
+    let phone = store
+        .get_str(NVS_BINDING_PHONE_ID_KEY, &mut buf)
+        .ok()
+        .flatten()
+        .map(|s| s.trim().to_string())
+        .filter(|s: &String| !s.is_empty());
+
+    (bound, phone)
+}
+
+fn save_binding_to_nvs(
+    nvs: &Mutex<EspDefaultNvsPartition>,
+    bound: bool,
+    phone_id: Option<&str>,
+) {
+    const NVS_NAMESPACE: &str = "bt_fy";
+
+    let partition = lock_or_recover(nvs, "nvs").clone();
+    let Ok(mut store) = EspDefaultNvs::new(partition, NVS_NAMESPACE, true) else {
+        return;
+    };
+
+    let _ = store.set_u8(NVS_BINDING_BOUND_KEY, if bound { 1 } else { 0 });
+    if bound {
+        if let Some(pid) = phone_id {
+            let _ = store.set_str(NVS_BINDING_PHONE_ID_KEY, pid);
+        }
+    } else {
+        let _ = store.remove(NVS_BINDING_PHONE_ID_KEY);
+    }
+}
+
+fn load_pair_from_nvs(nvs: &Mutex<EspDefaultNvsPartition>) -> (Option<String>, Option<String>) {
+    const NVS_NAMESPACE: &str = "bt_fy";
+
+    let partition = lock_or_recover(nvs, "nvs").clone();
+    let store = EspDefaultNvs::new(partition, NVS_NAMESPACE, true).ok();
+    let Some(store) = store else {
+        return (None, None);
+    };
+
+    let mut buf1 = [0u8; 128];
+    let paired_with = store
+        .get_str(NVS_PAIR_PAIRED_WITH_KEY, &mut buf1)
+        .ok()
+        .flatten()
+        .map(|s| s.trim().to_string())
+        .filter(|s: &String| !s.is_empty());
+
+    let mut buf2 = [0u8; 64];
+    let peer_ip = store
+        .get_str(NVS_PAIR_PEER_IP_KEY, &mut buf2)
+        .ok()
+        .flatten()
+        .map(|s| s.trim().to_string())
+        .filter(|s: &String| !s.is_empty());
+
+    (paired_with, peer_ip)
+}
+
+fn save_pair_to_nvs(
+    nvs: &Mutex<EspDefaultNvsPartition>,
+    paired_with: Option<&str>,
+    peer_ip: Option<&str>,
+) {
+    const NVS_NAMESPACE: &str = "bt_fy";
+
+    let partition = lock_or_recover(nvs, "nvs").clone();
+    let Ok(mut store) = EspDefaultNvs::new(partition, NVS_NAMESPACE, true) else {
+        return;
+    };
+
+    match paired_with {
+        Some(v) if !v.is_empty() => {
+            let _ = store.set_str(NVS_PAIR_PAIRED_WITH_KEY, v);
+        }
+        _ => {
+            let _ = store.remove(NVS_PAIR_PAIRED_WITH_KEY);
+        }
+    }
+
+    match peer_ip {
+        Some(v) if !v.is_empty() => {
+            let _ = store.set_str(NVS_PAIR_PEER_IP_KEY, v);
+        }
+        _ => {
+            let _ = store.remove(NVS_PAIR_PEER_IP_KEY);
+        }
+    }
+}
+
 fn error_response(code: &str, message: &str) -> String {
     serde_json::json!({
         "status": "error",
@@ -54,7 +175,6 @@ fn error_response(code: &str, message: &str) -> String {
 pub fn spawn_sta_services_on_connect(
     device_id: String,
     sta_ip: String,
-    bind_token: Option<String>,
     sta_ssid: Option<String>,
     servo: Option<Arc<ServoService>>,
     servo2: Option<Arc<ContinuousServoService>>,
@@ -63,30 +183,85 @@ pub fn spawn_sta_services_on_connect(
     trigger_state: TriggerState,
     sync_running: SyncRunning,
     wifi_list_store: WifiListStore,
+    bind_token_store: BindTokenStore,
+    nvs: NvsHandle,
 ) {
+    // Restore persisted binding state before starting UDP broadcast.
+    // This ensures restart after power cycle continues to emit `heartbeat` instead of `hello`.
+    {
+        let (bound, phone) = load_binding_from_nvs(nvs.as_ref());
+        info!(
+            "Restored binding state from NVS: bound={}, phone_id={}",
+            bound,
+            phone.as_deref().unwrap_or("")
+        );
+        let mut st = lock_or_recover(binding_state.as_ref(), "binding_state");
+        *st = (bound, phone);
+    }
+
+    // Restore persisted pair state (paired_with + peer_ip) for sync after reboot.
+    {
+        let (paired_with, peer_ip) = load_pair_from_nvs(nvs.as_ref());
+        info!(
+            "Restored pair state from NVS: paired_with={}, peer_ip={}",
+            paired_with.as_deref().unwrap_or(""),
+            peer_ip.as_deref().unwrap_or("")
+        );
+        let mut st = lock_or_recover(pair_state.as_ref(), "pair_state");
+        // pending pair requests are not persisted; keep it empty after reboot.
+        st.0.clear();
+        st.1 = paired_with;
+        st.2 = peer_ip;
+    }
+
     let did = device_id.clone();
     let ip = sta_ip.clone();
     let binding_state_udp = Arc::clone(&binding_state);
+    let bind_token_store_udp = Arc::clone(&bind_token_store);
     thread::Builder::new()
         .name("sta-udp".into())
-        .spawn(move || run_udp_broadcast(did, ip, bind_token, sta_ssid, binding_state_udp))
+        .spawn(move || {
+            run_udp_broadcast(did, ip, sta_ssid, binding_state_udp, bind_token_store_udp)
+        })
         .expect("spawn sta-udp");
-        thread::Builder::new()
-            .name("sta-tcp".into())
-            .spawn(move || run_tcp_control(device_id, sta_ip, servo, servo2, binding_state, pair_state, trigger_state, sync_running, wifi_list_store))
-            .expect("spawn sta-tcp");
+    thread::Builder::new()
+        .name("sta-tcp".into())
+        .spawn(move || {
+            run_tcp_control(
+                device_id,
+                sta_ip,
+                servo,
+                servo2,
+                binding_state,
+                pair_state,
+                trigger_state,
+                sync_running,
+                wifi_list_store,
+                nvs,
+                bind_token_store,
+            )
+        })
+        .expect("spawn sta-tcp");
 }
 
 const BINDING_INTERVAL_SECS: u64 = 4;
 const MAX_PENDING_PAIR_REQUESTS: usize = 64;
+// Keep pool small on ESP32 to avoid startup thread-allocation failures.
+const STA_TCP_WORKER_COUNT: usize = 2;
+const STA_TCP_QUEUE_CAPACITY: usize = 8;
+const STA_TCP_WORKER_STACK_SIZE: usize = 24 * 1024;
 
 fn run_udp_broadcast(
     device_id: String,
     sta_ip: String,
-    bind_token: Option<String>,
     sta_ssid: Option<String>,
     binding_state: BindingState,
+    bind_token_store: BindTokenStore,
 ) {
+    info!(
+        "UDP broadcast thread started (id={}, sta_ip={})",
+        device_id, sta_ip
+    );
     let socket = match UdpSocket::bind("0.0.0.0:0") {
         Ok(s) => s,
         Err(e) => {
@@ -96,16 +271,21 @@ fn run_udp_broadcast(
     };
     let _ = socket.set_broadcast(true);
     let dest: SocketAddrV4 = SocketAddrV4::new(std::net::Ipv4Addr::new(255, 255, 255, 255), STA_UDP_PORT);
+    let mut last_seen_bind_token: Option<String> = None;
     loop {
         let (bound, _) = *lock_or_recover(binding_state.as_ref(), "binding_state");
-        if bound {
-            let msg = serde_json::json!({
-                "evt": "heartbeat",
-                "id": device_id,
-                "ssid": sta_ssid.as_deref().unwrap_or(""),
-            });
-            let _ = socket.send_to(msg.to_string().as_bytes(), dest);
-        } else if let Some(ref token) = bind_token {
+        let bind_token_now = lock_or_recover(bind_token_store.as_ref(), "bind_token_store").clone();
+        if bind_token_now != last_seen_bind_token {
+            if let Some(ref t) = bind_token_now {
+                info!("UDP binding token updated (len={})", t.len());
+            } else {
+                info!("UDP binding token cleared");
+            }
+            last_seen_bind_token = bind_token_now.clone();
+        }
+        // During provisioning, always emit `evt=binding` as long as we still have a bind token.
+        // This prevents the add-device flow from getting stuck when `binding_state` was already true after reboot.
+        if let Some(token) = bind_token_now {
             let msg = serde_json::json!({
                 "evt": "binding",
                 "id": device_id,
@@ -113,6 +293,15 @@ fn run_udp_broadcast(
                 "ssid": sta_ssid.as_deref().unwrap_or(""),
                 "bindToken": token,
             });
+            info!("UDP broadcast send evt=binding (id={}, token_len={})", device_id, token.len());
+            let _ = socket.send_to(msg.to_string().as_bytes(), dest);
+        } else if bound {
+            let msg = serde_json::json!({
+                "evt": "heartbeat",
+                "id": device_id,
+                "ssid": sta_ssid.as_deref().unwrap_or(""),
+            });
+            info!("UDP broadcast send evt=heartbeat (id={})", device_id);
             let _ = socket.send_to(msg.to_string().as_bytes(), dest);
         } else {
             // Keep discoverability even when no bind token is available.
@@ -122,6 +311,7 @@ fn run_udp_broadcast(
                 "ip": sta_ip,
                 "ssid": sta_ssid.as_deref().unwrap_or(""),
             });
+            info!("UDP broadcast send evt=hello (id={})", device_id);
             let _ = socket.send_to(msg.to_string().as_bytes(), dest);
         }
         thread::sleep(Duration::from_secs(BINDING_INTERVAL_SECS));
@@ -138,6 +328,8 @@ fn run_tcp_control(
     trigger_state: TriggerState,
     sync_running: SyncRunning,
     wifi_list_store: WifiListStore,
+    nvs: NvsHandle,
+    bind_token_store: BindTokenStore,
 ) {
     let addr = format!("0.0.0.0:{}", STA_TCP_PORT);
     let listener = match TcpListener::bind(&addr) {
@@ -148,28 +340,13 @@ fn run_tcp_control(
         }
     };
     info!("STA TCP control on {}", addr);
-    let active_clients = Arc::new(AtomicUsize::new(0));
-    const MAX_ACTIVE_CLIENTS: usize = 6;
-    for stream in listener.incoming().filter_map(Result::ok) {
-        let peer_addr = stream.peer_addr().ok();
-        if let Some(ref peer) = peer_addr {
-            info!("STA TCP client connected from {}", peer);
-        }
-        let cur = active_clients.load(AtomicOrdering::Relaxed);
-        if cur >= MAX_ACTIVE_CLIENTS {
-            // Too many connections; drop this one to avoid OOM/thread explosion.
-            warn!("STA TCP too many active clients ({}), dropping connection", cur);
-            let mut s = stream;
-            let _ = writeln!(
-                s,
-                "{}",
-                error_response("busy", "too_many_connections")
-            );
-            let _ = s.flush();
-            let _ = s.shutdown(Shutdown::Both);
-            continue;
-        }
 
+    // Fixed worker pool + bounded queue to avoid thread explosion on ESP.
+    let (tx, rx) = mpsc::sync_channel::<TcpStream>(STA_TCP_QUEUE_CAPACITY);
+    let rx = Arc::new(Mutex::new(rx));
+
+    let mut created_workers = 0usize;
+    for i in 0..STA_TCP_WORKER_COUNT {
         let servo = servo.clone();
         let servo2 = servo2.clone();
         let binding_state = Arc::clone(&binding_state);
@@ -177,27 +354,93 @@ fn run_tcp_control(
         let wifi_list_store = Arc::clone(&wifi_list_store);
         let trigger_state = Arc::clone(&trigger_state);
         let sync_running = Arc::clone(&sync_running);
+        let nvs = Arc::clone(&nvs);
+        let bind_token_store = Arc::clone(&bind_token_store);
         let device_id = device_id.clone();
-        let active_clients = Arc::clone(&active_clients);
-        let _ = thread::Builder::new()
-            .name("sta-client".into())
-            .stack_size(64 * 1024)
+        let rx = Arc::clone(&rx);
+
+        match thread::Builder::new()
+            .name(format!("sta-worker-{}", i))
+            .stack_size(STA_TCP_WORKER_STACK_SIZE)
             .spawn(move || {
-            active_clients.fetch_add(1, AtomicOrdering::Relaxed);
-            let _ = handle_sta_client(
-                stream,
-                &device_id,
-                &servo,
-                &servo2,
-                &binding_state,
-                &pair_state,
-                &trigger_state,
-                &sync_running,
-                &wifi_list_store,
-                peer_addr,
-            );
-            active_clients.fetch_sub(1, AtomicOrdering::Relaxed);
-        });
+                loop {
+                    let stream = {
+                        let guard = lock_or_recover(rx.as_ref(), "sta_tcp_rx");
+                        match guard.recv() {
+                            Ok(s) => s,
+                            Err(_) => break,
+                        }
+                    };
+                    let peer_addr = stream.peer_addr().ok();
+                    if let Some(ref peer) = peer_addr {
+                        info!("STA TCP worker accepted {}", peer);
+                    }
+                    handle_sta_client(
+                        stream,
+                        &device_id,
+                        &servo,
+                        &servo2,
+                        &binding_state,
+                        &pair_state,
+                        &trigger_state,
+                        &sync_running,
+                        &wifi_list_store,
+                        peer_addr,
+                        &nvs,
+                        &bind_token_store,
+                    );
+                }
+            }) {
+            Ok(_) => {
+                created_workers += 1;
+            }
+            Err(e) => {
+                warn!(
+                    "failed to spawn sta worker {} (stack={}): {}",
+                    i, STA_TCP_WORKER_STACK_SIZE, e
+                );
+            }
+        }
+    }
+    if created_workers == 0 {
+        warn!("no STA TCP workers created; incoming connections will be rejected");
+    } else {
+        info!("STA TCP workers created: {}", created_workers);
+    }
+
+    for stream in listener.incoming().filter_map(Result::ok) {
+        let peer_addr = stream.peer_addr().ok();
+        if let Some(ref peer) = peer_addr {
+            info!("STA TCP client connected from {}", peer);
+        }
+        match tx.try_send(stream) {
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Full(mut s)) => {
+                // Queue overload: reject fast, keep system alive.
+                warn!(
+                    "STA TCP queue full (cap={}), dropping connection",
+                    STA_TCP_QUEUE_CAPACITY
+                );
+                let _ = writeln!(
+                    s,
+                    "{}",
+                    error_response("busy", "too_many_connections")
+                );
+                let _ = s.flush();
+                let _ = s.shutdown(Shutdown::Both);
+            }
+            Err(mpsc::TrySendError::Disconnected(mut s)) => {
+                warn!("STA TCP workers unavailable, dropping connection");
+                let _ = writeln!(
+                    s,
+                    "{}",
+                    error_response("internal", "worker_unavailable")
+                );
+                let _ = s.flush();
+                let _ = s.shutdown(Shutdown::Both);
+                break;
+            }
+        }
     }
 }
 
@@ -235,6 +478,8 @@ fn handle_sta_client(
     sync_running: &SyncRunning,
     wifi_list_store: &WifiListStore,
     peer_addr: Option<std::net::SocketAddr>,
+    nvs: &NvsHandle,
+    bind_token_store: &BindTokenStore,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
@@ -284,6 +529,8 @@ fn handle_sta_client(
             sync_running,
             wifi_list_store,
             peer_addr,
+            nvs,
+            bind_token_store,
         );
         if writeln!(stream, "{}", response).is_err() || stream.flush().is_err() {
             warn!("STA TCP write error");
@@ -303,6 +550,8 @@ fn process_sta_command(
     sync_running: &SyncRunning,
     wifi_list_store: &WifiListStore,
     peer_addr: Option<std::net::SocketAddr>,
+    nvs: &NvsHandle,
+    bind_token_store: &BindTokenStore,
 ) -> String {
     let json: serde_json::Value = match serde_json::from_str(msg) {
         Ok(j) => j,
@@ -349,11 +598,20 @@ fn process_sta_command(
                 .to_string();
             let mut state = lock_or_recover(binding_state.as_ref(), "binding_state");
             *state = (true, Some(phone));
+            // Persist binding state for automatic recovery after power cycle.
+            let (bound, phone_id) = (true, state.1.as_deref());
+            save_binding_to_nvs(nvs.as_ref(), bound, phone_id);
+            // Clear provisioning token once binding is applied.
+            let mut tok = lock_or_recover(bind_token_store.as_ref(), "bind_token_store");
+            *tok = None;
             r#"{"status":"ok"}"#.to_string()
         }
         "unbind" => {
             let mut state = lock_or_recover(binding_state.as_ref(), "binding_state");
             *state = (false, None);
+            save_binding_to_nvs(nvs.as_ref(), false, None);
+            let mut tok = lock_or_recover(bind_token_store.as_ref(), "bind_token_store");
+            *tok = None;
             r#"{"status":"ok"}"#.to_string()
         }
         "pair_request" => {
@@ -410,6 +668,9 @@ fn process_sta_command(
                             target_ip.to_string()
                         };
                         state.2 = Some(peer_ip.clone());
+                        drop(state);
+                        // Persist core paired state so reboot can keep sync routing working.
+                        save_pair_to_nvs(nvs.as_ref(), Some(target_device_id), Some(peer_ip.as_str()));
                         return serde_json::json!({
                             "status":"ok",
                             "message":"pair_accepted",
@@ -497,6 +758,15 @@ fn process_sta_command(
             //
             // Trigger message only: no phase/velocity info is sent from A.
 
+            let req_id_opt = json
+                .get("req_id")
+                .or_else(|| json.get("req"))
+                .and_then(|v| v.as_u64());
+            let ack_ok = |ack_cmd: &str| match req_id_opt {
+                Some(id) => serde_json::json!({"status":"ok","ack":ack_cmd,"req_id":id}).to_string(),
+                None => serde_json::json!({"status":"ok","ack":ack_cmd}).to_string(),
+            };
+
             // Change state first, and only spawn a new thread when transitioning false -> true.
             let spawn_thread = {
                 let mut run = lock_or_recover(sync_running.as_ref(), "sync_running");
@@ -509,7 +779,7 @@ fn process_sta_command(
             };
 
             if !spawn_thread {
-                return r#"{"status":"ok"}"#.to_string();
+                return ack_ok("sync_start");
             }
 
             if let Some(s1) = servo2.as_ref() {
@@ -521,9 +791,10 @@ fn process_sta_command(
             let sync_running_for_thread = Arc::clone(sync_running);
             let trigger_state_for_thread = Arc::clone(trigger_state);
 
-            let _ = std::thread::Builder::new()
+            let spawn_res = std::thread::Builder::new()
                 .name("sync-runner".into())
-                .stack_size(96 * 1024)
+                // ESP32-C3 任务栈空间较紧，stack 太大会更容易触发 pthread 失败。
+                .stack_size(48 * 1024)
                 .spawn(move || {
                     let sync_logic = || {
                         const TICK_MS: u64 = 40;
@@ -638,13 +909,31 @@ fn process_sta_command(
                     }
                 });
 
-            r#"{"status":"ok"}"#.to_string()
+            if let Err(e) = spawn_res {
+                // 回滚 sync_running，避免“失败后一直保持 running=true 导致后续无法重试”。
+                let mut run = lock_or_recover(sync_running.as_ref(), "sync_running");
+                *run = false;
+                warn!("sync-runner spawn failed: {}", e);
+                return error_response("sync_spawn_failed", "pthread_failed");
+            }
+
+            ack_ok("sync_start")
         }
         "sync_stop" => {
             // Stop sync:
             // - stop sync thread
             // - park servo1 near idle angle
             // - stop servo2 rotation
+
+            let req_id_opt = json
+                .get("req_id")
+                .or_else(|| json.get("req"))
+                .and_then(|v| v.as_u64());
+            let ack_ok = |ack_cmd: &str| match req_id_opt {
+                Some(id) => serde_json::json!({"status":"ok","ack":ack_cmd,"req_id":id}).to_string(),
+                None => serde_json::json!({"status":"ok","ack":ack_cmd}).to_string(),
+            };
+
             let mut run = lock_or_recover(sync_running.as_ref(), "sync_running");
             *run = false;
 
@@ -659,7 +948,7 @@ fn process_sta_command(
             if let Some(s2) = servo2.as_ref() {
                 let _ = s2.set_angle(SERVO2_CMD_NEUTRAL);
             }
-            r#"{"status":"ok"}"#.to_string()
+            ack_ok("sync_stop")
         }
         "accept_pair" => {
             let from_device_id = json.get("from_device_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -670,13 +959,14 @@ fn process_sta_command(
                 state.1 = Some(from_device_id.to_string());
                 state.2 = Some(ip.clone());
                 drop(state);
+                // Persist core paired state so reboot can keep sync routing working.
+                save_pair_to_nvs(nvs.as_ref(), Some(from_device_id), Some(ip.as_str()));
                 let addr = format!("{}:{}", ip, STA_TCP_PORT);
                 if let Ok(addr_parsed) = addr.parse() {
                     if let Ok(mut other) = TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(5)) {
                     let req = serde_json::json!({
                         "cmd":"pair_accepted",
-                        "device_id": device_id,
-                        "peer_ip": ip
+                        "device_id": device_id
                     });
                     let _ = writeln!(other, "{}", req);
                     let _ = other.flush();
@@ -709,6 +999,14 @@ fn process_sta_command(
                         state.2 = Some(ip);
                     }
                 }
+                let paired_with_owned = state.1.clone();
+                let peer_ip_owned = state.2.clone();
+                drop(state);
+                save_pair_to_nvs(
+                    nvs.as_ref(),
+                    paired_with_owned.as_deref(),
+                    peer_ip_owned.as_deref(),
+                );
                 return r#"{"status":"ok"}"#.to_string();
             }
             error_response("missing_device_id", "missing device_id")
@@ -724,6 +1022,7 @@ fn process_sta_command(
             state.2 = None;
             state.0.clear();
             drop(state);
+            save_pair_to_nvs(nvs.as_ref(), None, None);
 
             if let Some(ip) = peer_ip {
                 let addr = format!("{}:{}", ip, STA_TCP_PORT);
@@ -742,6 +1041,8 @@ fn process_sta_command(
                 let mut state = lock_or_recover(pair_state.as_ref(), "pair_state");
                 state.1 = None;
                 state.2 = None;
+                drop(state);
+                save_pair_to_nvs(nvs.as_ref(), None, None);
                 return r#"{"status":"ok"}"#.to_string();
             }
             error_response("missing_device_id", "missing device_id")
