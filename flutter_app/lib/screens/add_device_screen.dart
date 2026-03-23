@@ -241,9 +241,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     });
     if (mounted && _waitingBindingAfterConfig) {
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('bind_waiting_message'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.t('bind_waiting_message'))));
     }
   }
 
@@ -311,11 +311,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     if (!mounted) return;
     if (result['status'] == 'ok') {
       await _deviceStorage.save(
-        d.copyWith(
-          isBound: true,
-          name: d.deviceId,
-          boundPhoneId: phoneId,
-        ),
+        d.copyWith(isBound: true, name: d.deviceId, boundPhoneId: phoneId),
       );
       if (mounted) Navigator.pop(context);
     }
@@ -503,7 +499,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                         title: Text(d.deviceId),
                         subtitle: Text(d.ipAddress),
                         trailing: _selectedPending?.deviceId == d.deviceId
-                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                              )
                             : const Icon(Icons.chevron_right),
                         onTap: () async {
                           await HapticFeedback.selectionClick();
@@ -527,7 +526,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.verified_user),
                         label: Text(l10n.t('confirm_bind')),
@@ -580,18 +581,12 @@ class _InlineInfoBanner extends StatelessWidget {
               ? SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: fg,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: fg),
                 )
               : Icon(icon, size: 18, color: fg),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: fg),
-            ),
+            child: Text(text, style: TextStyle(color: fg)),
           ),
         ],
       ),
@@ -600,10 +595,7 @@ class _InlineInfoBanner extends StatelessWidget {
 }
 
 class _StepSectionCard extends StatelessWidget {
-  const _StepSectionCard({
-    required this.stepLabel,
-    required this.child,
-  });
+  const _StepSectionCard({required this.stepLabel, required this.child});
 
   final String stepLabel;
   final Widget child;

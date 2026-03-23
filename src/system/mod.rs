@@ -7,28 +7,34 @@
 
 pub mod config;
 
+use esp_idf_hal::ledc::LowSpeed;
 use esp_idf_hal::{
     ledc::{self, config::TimerConfig, LedcTimerDriver},
     peripheral::Peripheral,
     peripherals::Peripherals,
     prelude::*,
 };
-use esp_idf_hal::ledc::LowSpeed;
-use esp_idf_svc::{eventloop::EspSystemEventLoop, log::EspLogger, nvs::{EspDefaultNvs, EspDefaultNvsPartition}};
+use esp_idf_svc::{
+    eventloop::EspSystemEventLoop,
+    log::EspLogger,
+    nvs::{EspDefaultNvs, EspDefaultNvsPartition},
+};
 use log::info;
 use std::sync::Arc;
 
 use crate::{
     dns::DnsService,
-    hardware::{self, ContinuousServoService, vl53l1x::VL53L1XService, ServoService, TofSensor, VL53L0XService},
+    hardware::{
+        self, vl53l1x::VL53L1XService, ContinuousServoService, ServoService, TofSensor,
+        VL53L0XService,
+    },
     protocol::{
-        spawn_sta_services_on_connect, start_ap_tcp_listener, BindingState, PairState, PendingBindToken,
-        PendingConfigDone, SyncRunning, TriggerState, WifiListStore, BindTokenStore,
+        spawn_sta_services_on_connect, start_ap_tcp_listener, BindTokenStore, BindingState,
+        PairState, PendingBindToken, PendingConfigDone, SyncRunning, TriggerState, WifiListStore,
     },
     system::config::{
-        AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN,
-        TOF_PERIOD_FAST_MS, TOF_PERIOD_SLOW_MS,
-        TOF_THRESHOLD_FAST_MM, TOF_THRESHOLD_START_MM,
+        AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN, TOF_PERIOD_FAST_MS,
+        TOF_PERIOD_SLOW_MS, TOF_THRESHOLD_FAST_MM, TOF_THRESHOLD_START_MM,
     },
     web::{HardwareStatus, WebService},
     wifi::{WifiCommand, WifiResponse, WifiService},
@@ -109,7 +115,11 @@ impl ButterflySystem {
     /// Order: TOF first (I2C + background thread), then LEDC timer and servos, so I2C is stable.
     fn try_init_hardware(
         peripherals: &mut Peripherals,
-    ) -> (Option<Arc<dyn TofSensor>>, Option<Arc<ServoService>>, Option<Arc<ContinuousServoService>>) {
+    ) -> (
+        Option<Arc<dyn TofSensor>>,
+        Option<Arc<ServoService>>,
+        Option<Arc<ContinuousServoService>>,
+    ) {
         // 1) Init VL53L0X first so I2C and its reading thread start before any LEDC/GPIO3/4 activity
         let sensor: Option<Arc<dyn TofSensor>> = {
             info!("Initializing VL53L0X sensor...");
@@ -253,7 +263,8 @@ impl ButterflySystem {
         let sync_running: SyncRunning = Arc::new(Mutex::new(false));
         let wifi_list_store: WifiListStore = Arc::new(Mutex::new(vec![]));
         // Persist/restore binding state across power cycles.
-        let nvs_handle: Arc<Mutex<EspDefaultNvsPartition>> = Arc::new(Mutex::new(self._nvs.clone()));
+        let nvs_handle: Arc<Mutex<EspDefaultNvsPartition>> =
+            Arc::new(Mutex::new(self._nvs.clone()));
 
         // Configure hardware status for web service
         if self.sensor.is_some() || self.servo.is_some() || self.servo2.is_some() {
@@ -336,7 +347,8 @@ impl ButterflySystem {
                             .ok()
                             .map(|g| (g.1.clone(), g.2.clone()))
                             .unwrap_or((None, None));
-                        let (Some(_paired_with), Some(peer_ip)) = (paired_with_opt, peer_ip_opt) else {
+                        let (Some(_paired_with), Some(peer_ip)) = (paired_with_opt, peer_ip_opt)
+                        else {
                             stream_opt = None;
                             stream_peer_ip = None;
                             last_confirmed_running = false;
@@ -358,9 +370,10 @@ impl ButterflySystem {
 
                             let addr = format!("{}:{}", peer_ip, sta_tcp_port);
                             if let Ok(addr_parsed) = addr.parse::<std::net::SocketAddr>() {
-                                if let Ok(mut s) =
-                                    std::net::TcpStream::connect_timeout(&addr_parsed, Duration::from_secs(2))
-                                {
+                                if let Ok(mut s) = std::net::TcpStream::connect_timeout(
+                                    &addr_parsed,
+                                    Duration::from_secs(2),
+                                ) {
                                     let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
                                     let _ = s.set_read_timeout(Some(Duration::from_millis(400)));
                                     stream_opt = Some(s);
@@ -443,13 +456,15 @@ impl ButterflySystem {
                 .spawn(move || {
                     // --- Test mode constants (from config + local) ---
                     const TICK_MS: u64 = 40;
-                    const THRESHOLD_MIN_MM: u16 = 20;     // ignore 0/invalid (sensor disconnected)
-                    let mm_range_linear = TOF_THRESHOLD_START_MM.saturating_sub(TOF_THRESHOLD_FAST_MM).max(1);
-                    const SERVO1_ANGLE_IDLE: u16 = 90;  // pair 前/后本机 servo1 均保持 90° 不动
+                    const THRESHOLD_MIN_MM: u16 = 20; // ignore 0/invalid (sensor disconnected)
+                    let mm_range_linear = TOF_THRESHOLD_START_MM
+                        .saturating_sub(TOF_THRESHOLD_FAST_MM)
+                        .max(1);
+                    const SERVO1_ANGLE_IDLE: u16 = 90; // pair 前/后本机 servo1 均保持 90° 不动
                     const SERVO2_ANGLE_MIN: u16 = 25;
                     const SERVO2_ANGLE_MAX: u16 = 130;
-                    const SERVO2_ANGLE_SPAN: u16 = 105;   // SERVO2_ANGLE_MAX - SERVO2_ANGLE_MIN (130-25)
-                    const PHASE_FULL_CYCLE: f32 = 2.0;   // phase 0..1: 130→25, 1..2: 25→130
+                    const SERVO2_ANGLE_SPAN: u16 = 105; // SERVO2_ANGLE_MAX - SERVO2_ANGLE_MIN (130-25)
+                    const PHASE_FULL_CYCLE: f32 = 2.0; // phase 0..1: 130→25, 1..2: 25→130
 
                     // Continuous phase [0, 2): no reset when period changes, so speed changes smoothly
                     let mut phase: f32 = 0.0;
@@ -480,10 +495,8 @@ impl ButterflySystem {
                                 // rising edge: notify peer once
                                 idle_applied = false;
                                 was_triggered = true;
-                                let paired_with_opt = pair_state_thd
-                                    .lock()
-                                    .ok()
-                                    .and_then(|g| g.1.clone());
+                                let paired_with_opt =
+                                    pair_state_thd.lock().ok().and_then(|g| g.1.clone());
                                 if paired_with_opt.is_some() {
                                     remote_desired_for_test.store(true, Ordering::Release);
                                 }
@@ -498,18 +511,15 @@ impl ButterflySystem {
                                         * (TOF_PERIOD_SLOW_MS - TOF_PERIOD_FAST_MS)
                                         / (mm_range_linear as u64)
                             };
-                            let advance =
-                                (TICK_MS as f32 / period_ms as f32) * PHASE_FULL_CYCLE;
+                            let advance = (TICK_MS as f32 / period_ms as f32) * PHASE_FULL_CYCLE;
                             phase += advance;
                             if phase >= PHASE_FULL_CYCLE {
                                 phase -= PHASE_FULL_CYCLE;
                             }
                             let angle0 = if phase < 1.0 {
-                                SERVO2_ANGLE_MAX
-                                    - (SERVO2_ANGLE_SPAN as f32 * phase) as u16
+                                SERVO2_ANGLE_MAX - (SERVO2_ANGLE_SPAN as f32 * phase) as u16
                             } else {
-                                SERVO2_ANGLE_MIN
-                                    + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
+                                SERVO2_ANGLE_MIN + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
                             };
                             let _ = (servo_set_thd)(angle0);
                             let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE);
@@ -519,26 +529,29 @@ impl ButterflySystem {
                                 let current = if phase < 1.0 {
                                     SERVO2_ANGLE_MAX - (SERVO2_ANGLE_SPAN as f32 * phase) as u16
                                 } else {
-                                    SERVO2_ANGLE_MIN + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
+                                    SERVO2_ANGLE_MIN
+                                        + (SERVO2_ANGLE_SPAN as f32 * (phase - 1.0)) as u16
                                 };
                                 let mid = (SERVO2_ANGLE_MIN + SERVO2_ANGLE_MAX) / 2;
-                                let idle_angle = if current < mid { SERVO2_ANGLE_MIN } else { SERVO2_ANGLE_MAX };
+                                let idle_angle = if current < mid {
+                                    SERVO2_ANGLE_MIN
+                                } else {
+                                    SERVO2_ANGLE_MAX
+                                };
                                 let _ = (servo_set_thd)(idle_angle);
                                 let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE); // 舵机1 回 90°
                                 idle_applied = true;
                                 phase = 0.0;
                                 // falling edge: notify peer once
-                                let paired_with_opt = pair_state_thd
-                                    .lock()
-                                    .ok()
-                                    .and_then(|g| g.1.clone());
+                                let paired_with_opt =
+                                    pair_state_thd.lock().ok().and_then(|g| g.1.clone());
                                 if paired_with_opt.is_some() {
                                     remote_desired_for_test.store(false, Ordering::Release);
                                 }
                             }
                             was_triggered = false;
                             if !idle_applied {
-                                let _ = (servo_set_thd)(SERVO2_ANGLE_MAX);   // 从未触发过时的默认停留 130°
+                                let _ = (servo_set_thd)(SERVO2_ANGLE_MAX); // 从未触发过时的默认停留 130°
                                 let _ = (servo2_set_thd)(SERVO1_ANGLE_IDLE); // 舵机1 回 90°
                                 idle_applied = true;
                             }
@@ -555,7 +568,8 @@ impl ButterflySystem {
         info!("Web server started");
 
         // AP 模式配网 TCP 1234（identify / config）；手机发完 config 可离开热点，STA 连上后在 WiFi 里持续发 binding，手机回信后完成绑定
-        let (sta_start_tx, sta_start_rx) = mpsc::channel::<(String, String, Option<String>, Option<String>)>();
+        let (sta_start_tx, sta_start_rx) =
+            mpsc::channel::<(String, String, Option<String>, Option<String>)>();
         let pending_config_done: PendingConfigDone = Arc::new(Mutex::new(None));
         let pending_bind_token: PendingBindToken = Arc::new(Mutex::new(None));
         let wifi_cmd_tx = self.wifi_cmd_tx.take().expect("wifi_cmd_tx");
@@ -679,7 +693,10 @@ impl ButterflySystem {
                         let did = wifi.get_device_id();
                         let bind_token = pending_bind_token_loop.lock().unwrap().take();
                         if let Some(ref t) = bind_token {
-                            info!("Connect OK: bind_token passed to STA services (len={})", t.len());
+                            info!(
+                                "Connect OK: bind_token passed to STA services (len={})",
+                                t.len()
+                            );
                         } else {
                             info!("Connect OK: bind_token is None (pending_bind_token was empty)");
                         }
@@ -692,6 +709,21 @@ impl ButterflySystem {
                             bind_token,
                             Some(sta.ssid.clone()),
                         ));
+
+                        // Auto-stop SoftAP shortly after STA connect succeeds.
+                        // Keep a small delay so client can receive connect response first.
+                        std::thread::sleep(Duration::from_secs(1));
+                        match wifi.execute(WifiCommand::StopAp) {
+                            WifiResponse::StopAp(Ok(())) => {
+                                info!("SoftAP stopped 1s after successful STA connection");
+                            }
+                            WifiResponse::StopAp(Err(e)) => {
+                                log::warn!("SoftAP auto-stop failed after connect: {}", e);
+                            }
+                            _ => {
+                                log::warn!("SoftAP auto-stop returned unexpected response");
+                            }
+                        }
                     }
                     let _ = reply_tx.send(response);
                 }

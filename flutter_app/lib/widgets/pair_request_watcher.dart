@@ -124,7 +124,10 @@ class _PairRequestWatcherState extends State<PairRequestWatcher> {
                       onAccept: () async {
                         final cur = _pendingNotifier.value;
                         if (cur == null) {
-                          return {'status': 'error', 'reason': 'no_pending_request'};
+                          return {
+                            'status': 'error',
+                            'reason': 'no_pending_request',
+                          };
                         }
                         return DeviceDiscoveryService.acceptPair(
                           cur.targetHost,
@@ -134,7 +137,10 @@ class _PairRequestWatcherState extends State<PairRequestWatcher> {
                       onReject: () async {
                         final cur = _pendingNotifier.value;
                         if (cur == null) {
-                          return {'status': 'error', 'reason': 'no_pending_request'};
+                          return {
+                            'status': 'error',
+                            'reason': 'no_pending_request',
+                          };
                         }
                         return DeviceDiscoveryService.rejectPair(
                           cur.targetHost,
@@ -200,10 +206,7 @@ class _PairRequestDialogState extends State<_PairRequestDialog> {
           Text(l10n.t('pair_request_content', [fromId, fromIp])),
           if (_errorText != null) ...[
             const SizedBox(height: 10),
-            Text(
-              _errorText!,
-              style: TextStyle(color: Colors.red.shade700),
-            ),
+            Text(_errorText!, style: TextStyle(color: Colors.red.shade700)),
           ],
         ],
       ),
@@ -254,4 +257,3 @@ class _PairRequestDialogState extends State<_PairRequestDialog> {
     );
   }
 }
-

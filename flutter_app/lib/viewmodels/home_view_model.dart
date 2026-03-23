@@ -44,10 +44,7 @@ class HomeViewModel extends ChangeNotifier {
     seconds: Protocol.heartbeatTimeoutSeconds,
   );
 
-  static DevicePresence presenceOf(
-    Device d, {
-    DateTime? now,
-  }) {
+  static DevicePresence presenceOf(Device d, {DateTime? now}) {
     final current = now ?? DateTime.now();
     final diff = current.difference(d.lastSeen);
     final diffSeconds = diff.isNegative ? 0 : diff.inSeconds;
@@ -87,11 +84,7 @@ class HomeViewModel extends ChangeNotifier {
 
   Future<void> addDiscoveredDevice(Device d, {required String phoneId}) async {
     await _repository.saveDevice(
-      d.copyWith(
-        isBound: true,
-        name: d.deviceId,
-        boundPhoneId: phoneId,
-      ),
+      d.copyWith(isBound: true, name: d.deviceId, boundPhoneId: phoneId),
     );
     _discoveredUnbound.remove(d.deviceId);
     notifyListeners();
