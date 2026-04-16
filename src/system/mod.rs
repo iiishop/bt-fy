@@ -30,7 +30,8 @@ use crate::{
     },
     protocol::{
         spawn_sta_services_on_connect, start_ap_tcp_listener, BindTokenStore, BindingState,
-        PairState, PendingBindToken, PendingConfigDone, SyncRunning, TriggerState, WifiListStore,
+        PairState, PendingBindToken, PendingConfigDone, SyncLeaseState, SyncRunning, TriggerState,
+        WifiListStore,
     },
     system::config::{
         AP_IP_ADDRESS, ENABLE_DNS_CAPTIVE, SERVO2_PIN, SERVO_PIN, TOF_PERIOD_FAST_MS,
@@ -43,7 +44,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// 每 boot 只启动一次 STA 服务，避免重复 bind 12345 导致 Address already in use
 static STA_SERVICES_STARTED: AtomicBool = AtomicBool::new(false);
@@ -261,6 +262,7 @@ impl ButterflySystem {
         let pair_state: PairState = Arc::new(Mutex::new((vec![], None, None)));
         let trigger_state: TriggerState = Arc::new(Mutex::new((0u64, 0u32)));
         let sync_running: SyncRunning = Arc::new(Mutex::new(false));
+        let sync_lease_state: SyncLeaseState = Arc::new(Mutex::new(0u64));
         let wifi_list_store: WifiListStore = Arc::new(Mutex::new(vec![]));
         // Persist/restore binding state across power cycles.
         let nvs_handle: Arc<Mutex<EspDefaultNvsPartition>> =
@@ -329,16 +331,20 @@ impl ButterflySystem {
             std::thread::Builder::new()
                 .name("sync-sender".into())
                 .spawn(move || {
+                    const SYNC_KEEPALIVE_MS: u64 = 800;
+                    const SYNC_LEASE_MS: u64 = 2_500;
+                    const IO_RETRY_MS: u64 = 300;
+
                     // Keep one TCP connection to the peer and reuse it.
                     let mut stream_opt: Option<std::net::TcpStream> = None;
                     let mut stream_peer_ip: Option<String> = None;
-                    // 最近一次收到对端 ACK 后确认的「是否在跑 remote sync」。
-                    let mut last_confirmed_running = false;
-                    // 用于让 ACK 能对应到一次请求。
-                    let mut req_seq: u64 = 0;
+                    // Last successfully sent desired state.
+                    let mut last_sent_desired = false;
+                    let mut last_sent_at: Option<Instant> = None;
+                    let mut last_io_attempt_at: Option<Instant> = None;
 
                     loop {
-                        std::thread::sleep(Duration::from_millis(50));
+                        std::thread::sleep(Duration::from_millis(100));
 
                         let desired = remote_desired_for_sender.load(Ordering::Acquire);
 
@@ -351,13 +357,10 @@ impl ButterflySystem {
                         else {
                             stream_opt = None;
                             stream_peer_ip = None;
-                            last_confirmed_running = false;
+                            last_sent_desired = false;
+                            last_sent_at = None;
                             continue;
                         };
-
-                        if desired == last_confirmed_running {
-                            continue;
-                        }
 
                         let need_reconnect = match stream_peer_ip.as_deref() {
                             Some(ip) if ip == peer_ip => false,
@@ -370,12 +373,12 @@ impl ButterflySystem {
 
                             let addr = format!("{}:{}", peer_ip, sta_tcp_port);
                             if let Ok(addr_parsed) = addr.parse::<std::net::SocketAddr>() {
-                                if let Ok(mut s) = std::net::TcpStream::connect_timeout(
+                                if let Ok(s) = std::net::TcpStream::connect_timeout(
                                     &addr_parsed,
-                                    Duration::from_secs(2),
+                                    Duration::from_millis(400),
                                 ) {
-                                    let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
-                                    let _ = s.set_read_timeout(Some(Duration::from_millis(400)));
+                                    let _ = s.set_write_timeout(Some(Duration::from_millis(80)));
+                                    let _ = s.set_read_timeout(Some(Duration::from_millis(20)));
                                     stream_opt = Some(s);
                                 } else {
                                     continue;
@@ -389,62 +392,50 @@ impl ButterflySystem {
                             continue;
                         };
 
-                        req_seq = req_seq.wrapping_add(1);
-                        let expected_ack = if desired { "sync_start" } else { "sync_stop" };
-                        let cmd_line = if desired {
-                            format!(r#"{{"cmd":"sync_start","req_id":{}}}"#, req_seq)
+                        let now = Instant::now();
+                        let io_backoff_ok = last_io_attempt_at
+                            .map(|t| now.duration_since(t) >= Duration::from_millis(IO_RETRY_MS))
+                            .unwrap_or(true);
+                        if !io_backoff_ok {
+                            continue;
+                        }
+
+                        let should_send = if desired != last_sent_desired {
+                            true
+                        } else if desired {
+                            last_sent_at
+                                .map(|t| {
+                                    now.duration_since(t)
+                                        >= Duration::from_millis(SYNC_KEEPALIVE_MS)
+                                })
+                                .unwrap_or(true)
                         } else {
-                            format!(r#"{{"cmd":"sync_stop","req_id":{}}}"#, req_seq)
+                            false
                         };
+                        if !should_send {
+                            continue;
+                        }
+
+                        let cmd_line = if desired {
+                            format!(
+                                r#"{{"cmd":"sync_start","lease_ms":{},"req_id":1}}"#,
+                                SYNC_LEASE_MS
+                            )
+                        } else {
+                            r#"{"cmd":"sync_stop","req_id":1}"#.to_string()
+                        };
+
+                        last_io_attempt_at = Some(now);
 
                         if writeln!(stream, "{}", cmd_line).is_err() || stream.flush().is_err() {
                             stream_opt = None;
                             continue;
                         }
 
-                        // Read one-line response to keep TCP recv buffer healthy.
-                        let start = std::time::Instant::now();
-                        let mut buf = [0u8; 1];
-                        let mut resp = Vec::<u8>::new();
-                        while start.elapsed() < Duration::from_millis(600) {
-                            match std::io::Read::read(stream, &mut buf) {
-                                Ok(0) => break,
-                                Ok(_) => {
-                                    if buf[0] == b'\n' {
-                                        break;
-                                    }
-                                    if buf[0] != b'\r' {
-                                        resp.push(buf[0]);
-                                    }
-                                }
-                                Err(_) => break,
-                            }
-                        }
-
-                        let resp_str = String::from_utf8_lossy(&resp).trim().to_string();
-                        let mut acked = false;
-                        if !resp_str.is_empty() {
-                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp_str) {
-                                let status_ok = v
-                                    .get("status")
-                                    .and_then(|x| x.as_str())
-                                    .map(|s| s == "ok")
-                                    .unwrap_or(false);
-                                let ack_ok = v
-                                    .get("ack")
-                                    .and_then(|x| x.as_str())
-                                    .map(|s| s == expected_ack)
-                                    .unwrap_or(false);
-                                let ack_req_id = v.get("req_id").and_then(|x| x.as_u64());
-                                let req_match = ack_req_id == Some(req_seq);
-                                acked = status_ok && ack_ok && req_match;
-                            }
-                        }
-
-                        if acked {
-                            last_confirmed_running = desired;
-                        } else {
-                            // 未收到匹配 ACK：认为链路当前不可靠，下轮继续重发（同 desired）。
+                        last_sent_desired = desired;
+                        last_sent_at = Some(now);
+                        if !desired {
+                            // Stop sent; release socket quickly.
                             stream_opt = None;
                         }
                     }
@@ -592,6 +583,7 @@ impl ButterflySystem {
         let pair_state_clone = Arc::clone(&pair_state);
         let trigger_state_clone = Arc::clone(&trigger_state);
         let sync_running_clone = Arc::clone(&sync_running);
+        let sync_lease_state_clone = Arc::clone(&sync_lease_state);
         let wifi_list_store_clone = Arc::clone(&wifi_list_store);
         let bind_token_store: BindTokenStore = Arc::new(Mutex::new(None));
 
@@ -629,6 +621,7 @@ impl ButterflySystem {
                             Arc::clone(&pair_state_clone),
                             Arc::clone(&trigger_state_clone),
                             Arc::clone(&sync_running_clone),
+                            Arc::clone(&sync_lease_state_clone),
                             Arc::clone(&wifi_list_store_clone),
                             Arc::clone(&bind_token_store),
                             Arc::clone(&nvs_handle),
@@ -670,6 +663,7 @@ impl ButterflySystem {
                         Arc::clone(&pair_state_clone),
                         Arc::clone(&trigger_state_clone),
                         Arc::clone(&sync_running_clone),
+                        Arc::clone(&sync_lease_state_clone),
                         Arc::clone(&wifi_list_store_clone),
                         Arc::clone(&bind_token_store),
                         Arc::clone(&nvs_handle),
