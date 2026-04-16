@@ -2,7 +2,7 @@
 //! 配网成功后保持 SoftAP，通过 channel 回传 success + deviceId/staIp/mac 给 Flutter，再继续读下一行。
 
 use log::{info, warn};
-use std::io::{Read, Write, ErrorKind};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -100,9 +100,13 @@ fn handle_ap_client(
             Ok(s) => s,
             Err(e) => {
                 // 对方断开、重置等视为正常，不刷 warn（ESP 上 128 = Socket is not connected）
-                let ok_disconnect = matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
-                    | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof)
-                    || e.raw_os_error() == Some(128);
+                let ok_disconnect = matches!(
+                    e.kind(),
+                    ErrorKind::ConnectionReset
+                        | ErrorKind::ConnectionAborted
+                        | ErrorKind::BrokenPipe
+                        | ErrorKind::UnexpectedEof
+                ) || e.raw_os_error() == Some(128);
                 if ok_disconnect {
                     info!("AP TCP client disconnected");
                 } else {
@@ -118,7 +122,11 @@ fn handle_ap_client(
         let json: serde_json::Value = match serde_json::from_str(msg) {
             Ok(j) => j,
             Err(_) => {
-                let _ = writeln!(stream, "{}", r#"{"status":"error","reason":"invalid json"}"#);
+                let _ = writeln!(
+                    stream,
+                    "{}",
+                    r#"{"status":"error","reason":"invalid json"}"#
+                );
                 let _ = stream.flush();
                 continue;
             }
@@ -140,51 +148,52 @@ fn handle_ap_client(
                 let mut guard = pending_bind_token.lock().unwrap();
                 *guard = Some(token.clone());
             }
-            let wifi_cmd: WifiCommand = if let Some(networks) = json.get("networks").and_then(|n| n.as_array()) {
-                let list: Vec<(String, Option<String>, String)> = networks
-                    .iter()
-                    .filter_map(|n| {
-                        let obj = n.as_object()?;
-                        let ssid = obj.get("ssid").and_then(|s| s.as_str())?.to_string();
-                        let pwd = obj.get("pwd").and_then(|s| s.as_str()).map(String::from);
-                        let sec = obj.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
-                        let auth = match sec {
-                            0 => "open",
-                            1 => "wep",
-                            2 => "wpa",
-                            3 => "wpa2",
-                            4 => "wpa3",
-                            5 => "wpa2_enterprise",
-                            _ => "wpa2",
-                        };
-                        Some((ssid, pwd, auth.to_string()))
-                    })
-                    .collect();
-                WifiCommand::ConnectFromList(list)
-            } else {
-                let ssid = json
-                    .get("ssid")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let pwd = json.get("pwd").and_then(|s| s.as_str()).map(String::from);
-                let sec = json.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
-                let auth = match sec {
-                    0 => "open",
-                    1 => "wep",
-                    2 => "wpa",
-                    3 => "wpa2",
-                    4 => "wpa3",
-                    5 => "wpa2_enterprise",
-                    _ => "wpa2",
+            let wifi_cmd: WifiCommand =
+                if let Some(networks) = json.get("networks").and_then(|n| n.as_array()) {
+                    let list: Vec<(String, Option<String>, String)> = networks
+                        .iter()
+                        .filter_map(|n| {
+                            let obj = n.as_object()?;
+                            let ssid = obj.get("ssid").and_then(|s| s.as_str())?.to_string();
+                            let pwd = obj.get("pwd").and_then(|s| s.as_str()).map(String::from);
+                            let sec = obj.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
+                            let auth = match sec {
+                                0 => "open",
+                                1 => "wep",
+                                2 => "wpa",
+                                3 => "wpa2",
+                                4 => "wpa3",
+                                5 => "wpa2_enterprise",
+                                _ => "wpa2",
+                            };
+                            Some((ssid, pwd, auth.to_string()))
+                        })
+                        .collect();
+                    WifiCommand::ConnectFromList(list)
+                } else {
+                    let ssid = json
+                        .get("ssid")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let pwd = json.get("pwd").and_then(|s| s.as_str()).map(String::from);
+                    let sec = json.get("sec").and_then(|s| s.as_u64()).unwrap_or(3) as u8;
+                    let auth = match sec {
+                        0 => "open",
+                        1 => "wep",
+                        2 => "wpa",
+                        3 => "wpa2",
+                        4 => "wpa3",
+                        5 => "wpa2_enterprise",
+                        _ => "wpa2",
+                    };
+                    WifiCommand::Connect {
+                        ssid,
+                        password: pwd,
+                        username: None,
+                        auth: auth.to_string(),
+                    }
                 };
-                WifiCommand::Connect {
-                    ssid,
-                    password: pwd,
-                    username: None,
-                    auth: auth.to_string(),
-                }
-            };
             let (reply_tx, reply_rx) = mpsc::channel();
             thread::spawn(move || {
                 let _ = reply_rx.recv();
@@ -200,8 +209,13 @@ fn handle_ap_client(
             let _ = stream.flush();
             continue;
         }
-        let (response, do_stop_ap_after_send) =
-            process_ap_message(msg, &device_id, &fw_version, &wifi_cmd_tx, &on_config_success);
+        let (response, do_stop_ap_after_send) = process_ap_message(
+            msg,
+            &device_id,
+            &fw_version,
+            &wifi_cmd_tx,
+            &on_config_success,
+        );
         if let Err(e) = writeln!(stream, "{}", response) {
             warn!("AP TCP write failed: {}", e);
             break;
@@ -228,7 +242,12 @@ fn process_ap_message(
 ) -> (String, bool) {
     let json: serde_json::Value = match serde_json::from_str(msg) {
         Ok(j) => j,
-        Err(_) => return (r#"{"status":"error","reason":"invalid json"}"#.to_string(), false),
+        Err(_) => {
+            return (
+                r#"{"status":"error","reason":"invalid json"}"#.to_string(),
+                false,
+            )
+        }
     };
     let cmd = json.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
     match cmd {
@@ -241,7 +260,10 @@ fn process_ap_message(
             false,
         ),
         "config" => unreachable!("config handled in handle_ap_client"),
-        _ => (r#"{"status":"error","reason":"unknown cmd"}"#.to_string(), false),
+        _ => (
+            r#"{"status":"error","reason":"unknown cmd"}"#.to_string(),
+            false,
+        ),
     }
 }
 
