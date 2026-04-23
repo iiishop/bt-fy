@@ -126,16 +126,12 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
 ### Hardware performance
 The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 5) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 5) was used instead, providing stable and safe power.
 <p align="center">
-  <img src="Li-ion Battery.png" width="50%" />
-  <img src="Power bank.png" width="50%" />
+  <img src="Li-ion Battery.jpg" width="50%" />
+  <img src="Power bank.jpg" width="50%" />
 </p>
 <p align="center">
   <em>Fig. 5. Li-ion Battery and power bank</em>
 </p>
-
-
-
-
 
 ## Challenges ##
 During development, we identified several practical challenges:​
@@ -180,6 +176,8 @@ While the prototype demonstrates the potential of IoT systems for remote, embodi
 These challenges reveal a trade-off between electrical reliability and mechanical performance, indicating the need for more integrated and robust design solutions in future iterations. Overall, the project shows that small physical actions can be translated into meaningful connections across distance.​
 
 ### Team Contributions
+
+
 ### References
 	Ishii, H. and Ullmer, B. (1997) ‘Tangible bits: Towards seamless interfaces between people, bits and atoms’, Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI ’97), pp. 234–241.
 
