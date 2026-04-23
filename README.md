@@ -126,8 +126,8 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
 ### Hardware performance
 The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 5) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 5) was used instead, providing stable and safe power.
 <p align="center">
-  <img src="Li-ion Battery.jpg" width="49%" />
-  <img src="Power bank.jpg" width="49%" />
+  <img src="Li-ion Battery.jpg" width="35%" />
+  <img src="Power bank.jpg" width="35%" />
 </p>
 <p align="center">
   <em>Fig. 5. Li-ion Battery and power bank</em>
