@@ -31,8 +31,11 @@ The butterfly therefore becomes both symbol and mechanism, representing how a mi
 <p align="center">
   <img src="Butterfly device system layout.png" width="1000">
 </p>
+<p align="center">
+  <em>Fig. 1. Butterfly device system layout</em>
+</p>
 
-The system layout presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
+The system layout(Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
 
 At Location A, a proximity sensor detects the user’s distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
 
@@ -48,8 +51,11 @@ The spatial separation highlights the core concept of translating local physical
   <img src="hardware_2.png" width="30%" />
   <img src="hardware_3.png" width="30%" />
 </p>
+<p align="center">
+  <em>Fig. 2. Hardware</em>
+</p>
 
-The system is built around the XIAO ESP32C3 , which provides both computation and wireless communication. A VL53L0X/VL53L1X  time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo (Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
+The system is built around the XIAO ESP32C3（Fig。2）, which provides both computation and wireless communication. A VL53L0X/VL53L1X（Fig。2） time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo(Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
 
 All components are integrated into a 3D-printed butterfly enclosure with fabric wings, combining functional design with an expressive physical form.
 
