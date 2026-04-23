@@ -77,12 +77,16 @@ The interaction logic in this system follows a clear three-stage flow: ​Users 
 The design of the butterfly mechanism and enclosure evolved significantly throughout the project. As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
 
 Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" width="1000">
+</p>
+<p align="center">
 <img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" />
 
 
-This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​
+This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 5)
 
-### Development Process
+## Development Process ##
 
 ### Wiring and soldering
 <p align="center">
@@ -107,22 +111,18 @@ The circuit was then soldered together( Fig. 4)
 
 
 ## Final Prototype ##
-
+<span style="color:red;">Need to add the butterfly with wings, and the picture of the final product(Matilda's job) </span>
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
 After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
  a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
 
 
-
-### Rotation
-In the final prototype, we were removed the rotational feature of the butterflies. The continuous rotation servo had originally been intended to represent the incremental accumulation of interactions over time, allowing users to perceive their partner’s ongoing activity. However, due to power constraints, the devices could not reliably operate on battery power and instead had to remain plugged into a wired supply. This physical arrangement restricted the rotational movement and made the feature impractical to retain.
-
-As a result, the final prototype did not fully realise our original intention of showing a partner’s accumulated presence through gradual rotational change. The rotational element had also contributed a dynamic pattern across the wall of butterflies, meaning that each installation would develop a unique visual composition based on patterns of interaction.
-
-Although this aspect was lost, the final design still successfully communicated physical presence through movement and continued to reflect the core aim of the project: making distant presence tangible through subtle kinetic response.
-
 ## Exceution of the project ##
+
+### Hardware performance
+The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing.
+
 
 
 
@@ -164,19 +164,11 @@ Extend the system to encode more information (e.g., intensity, frequency, patter
 ​
 ## Reflections
 
-In this project, we designed and built a networked physical system that transforms
-human presence into a tangible, observable signal.​
+In this project, a networked physical system was designed and built to transform human presence into a tangible and observable signal. The Butterfly Effect system enables users to perceive the presence of others across distance in a subtle and intuitive way. Unlike conventional digital communication, this approach emphasizes physical feedback and emotional awareness, creating a more meaningful connection between people.
 
-The Butterfly Effect system enables users to perceive the presence of others across
-distance in a subtle and intuitive way.​
+While the prototype demonstrates the potential of IoT systems for remote, embodied interaction, several limitations remain. The use of a power bank, although improving reliability, introduced additional size and weight that interfered with the butterfly’s rotational movement, reducing the effectiveness of the physical interaction. Furthermore, instability caused by manual wiring highlights the limitations of ad-hoc prototyping in compact embedded systems.
 
-Unlike conventional digital communication, our approach emphasizes physical feedback
-and emotional awareness, creating a more meaningful connection between people.​
-
-While the current prototype has limitations, it demonstrates the potential of using IoT
-systems to support new forms of remote, embodied interaction.​
-
-Small actions can create meaningful connections, even across distance.​
+These challenges reveal a trade-off between electrical reliability and mechanical performance, indicating the need for more integrated and robust design solutions in future iterations. Overall, the project shows that small physical actions can be translated into meaningful connections across distance.​
 
 ### Team Contributions
 ### References
