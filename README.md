@@ -2,28 +2,40 @@
 
 ## Introduction ###
 Kickstarter Video: https://youtu.be/o-Wq5kcca9Q​
+As digital communication becomes increasingly pervasive, remote interaction remains largely screen-based and information-driven. While messaging and video calls enable efficient exchange, they often fail to convey a subtle yet important dimension of human connection: the feeling of another person’s presence within one’s physical space. This challenge is central to research in Connected Environments, which explores how digital systems can be embedded into everyday settings through tangible and ambient forms of interaction rather than purely visual interfaces. Ishii and Ullmer’s concept of Tangible Bits highlights how digital information can be coupled with physical artefacts to support more spatial and embodied interaction (Ishii & Ullmer, 1997), while studies on ambient awareness suggest that small, continuous signals can accumulate into a meaningful sense of social presence over time (Thompson et al., 2011).
+
+This project, Butterfly Effect, addresses this challenge by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
 
 ## The Problem ###
-Across distance, an important quality of communication is often lost: the feeling that another person is present in the same moment.
-Conventional messaging systems and notifications allow information to be exchanged efficiently, yet they rarely convey a sense of real-time physical presence or shared space.
-This project explores the question:
+Across distance, an important quality of communication is often lost: the feeling that another person is present in the same moment. Conventional messaging systems and notifications allow information to be exchanged efficiently, yet they rarely convey a sense of real-time physical presence or shared space. Existing technologies primarily prioritise explicit information exchange, leaving limited support for subtle, non-verbal aspects of connection. As a result, remote interaction often lacks the immediacy and emotional nuance associated with co-located presence.
+
+This raises a key question for this project:
 
 How can presence be made tangible across distance?
 
 ## Motivation ###
+The Butterfly Effect installation transforms human presence into a physical, perceivable signal through a pair of networked butterfly devices. When a user approaches one device, both respond through synchronous wing movement and rotation, enabling presence in one space to be felt in another. By shifting communication from explicit information exchange to embodied environmental feedback, the system explores alternative ways of mediating connection at a distance. Research in mediated social touch suggests that non-verbal and haptic interaction can enhance emotional connectedness in remote communication (van Erp & Toet, 2015).
+
+The concept of the “butterfly effect” provides a theoretical framing, where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). Here, this principle is translated into interaction design, allowing minor everyday actions to produce visible effects elsewhere.
 
 ## Concept ###
 
 Concept: Butterfly Effect Installation
+
 The project is informed by the idea of the Butterfly Effect, where a small and seemingly insignificant action can create consequences elsewhere through an interconnected system.
 We reinterpret this concept through remote communication: a simple movement made by one person in one location triggers a physical response in another. Human presence is sensed and translated into the motion of butterfly wings at a distant site.
 The butterfly therefore becomes both symbol and mechanism, representing how a minor action in one place can generate a meaningful emotional effect somewhere else.
 ​
 ## How It Works ###
-Our system links two distant physical devices through a mobile application and wireless network communication.
-When presence is detected at one location, the paired device responds through synchronized movement, creating a real-time connection between the two spaces.
-User Scenario A person walks past their butterfly device at home. The system detects this movement and sends a signal to its paired counterpart.
-Elsewhere, another person sees their butterfly begin to move, providing a subtle indication that the other person is active and present in that moment.
+
+
+The system layout (Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
+
+At Location A, a proximity sensor detects the user’s distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
+
+At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This tangential movement encodes the duration or accumulation of interactions over time.
+
+The spatial separation highlights the core concept of translating local physical actions into remote, perceivable effects. By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Multiple butterfly units can also be arranged on a wall to respond simultaneously, amplifying the perceived effect.
 
 ## Design Process ##
 
@@ -135,3 +147,11 @@ Small actions can create meaningful connections, even across distance.​
 
 ### Team Contributions
 ### References
+	Ishii, H. and Ullmer, B. (1997) ‘Tangible bits: Towards seamless interfaces between people, bits and atoms’, Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI ’97), pp. 234–241.
+
+	Thompson, S.A., Kennedy, R., and Lomas, D. (2011) ‘Ambient awareness: From random noise to digital closeness in social media’, Proceedings of the SIGCHI Conference on Human Factors in Computing Systems, pp. 237–246.
+
+	van Erp, J.B.F. and Toet, A. (2015) ‘Social touch in human–computer interaction’, Frontiers in Digital Humanities, 2(2), pp. 1–13.
+
+	Lorenz, E.N. (1963) ‘Deterministic nonperiodic flow’, Journal of the Atmospheric Sciences, 20(2), pp. 130–141.
+
