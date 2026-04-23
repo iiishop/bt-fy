@@ -2,6 +2,7 @@
 
 ## Introduction ###
 Kickstarter Video: https://youtu.be/o-Wq5kcca9Q​
+
 As digital communication becomes increasingly pervasive, remote interaction remains largely screen-based and information-driven. While messaging and video calls enable efficient exchange, they often fail to convey a subtle yet important dimension of human connection: the feeling of another person’s presence within one’s physical space. This challenge is central to research in Connected Environments, which explores how digital systems can be embedded into everyday settings through tangible and ambient forms of interaction rather than purely visual interfaces. Ishii and Ullmer’s concept of Tangible Bits highlights how digital information can be coupled with physical artefacts to support more spatial and embodied interaction (Ishii & Ullmer, 1997), while studies on ambient awareness suggest that small, continuous signals can accumulate into a meaningful sense of social presence over time (Thompson et al., 2011).
 
 This project, Butterfly Effect, addresses this challenge by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
