@@ -55,13 +55,24 @@ The spatial separation highlights the core concept of translating local physical
   <em>Fig. 2. Hardware</em>
 </p>
 
-The system is built around the XIAO ESP32C3（Fig。2）, which provides both computation and wireless communication. A VL53L0X/VL53L1X（Fig。2） time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo(Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
+The system is built around the XIAO ESP32C3（Fig。2）, which provides both computation and wireless communication. A VL53L0X/VL53L1X（Fig. 2） time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo(Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
 
 All components are integrated into a 3D-printed butterfly enclosure with fabric wings, combining functional design with an expressive physical form.
 
 
 ### Wiring
-image of wiring
+<p align="center">
+  <img src="Circuit connection layout.png" width="1000">
+</p>
+<p align="center">
+  <em>Fig. 3.Circuit connection layout</em>
+</p>
+
+The circuit is centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 3)
+
+### Wiring
+
+
 ### The app
 The interaction logic in this system follows a clear three-stage flow: ​Users first add the device via its temporary SoftAP, ​then provide home WiFi for the device,​ and finally enter the control interface.​ After credentials are submitted, the remaining transition is handled automatically by the device, including connecting in STA mode to the target WiFi, auto-stopping SoftAP after a short delay, and bootstrapping control-related services on the local network. This design reduces onboarding friction while ensuring a smooth transition into a stable online control state.​
 
