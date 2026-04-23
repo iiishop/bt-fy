@@ -78,10 +78,11 @@ The design of the butterfly mechanism and enclosure evolved significantly throug
 
 Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" width="1000">
+  <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" width="800">
 </p>
 <p align="center">
-<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" />
+  <em>Fig. 5.3D enclosure model</em>
+</p>
 
 
 This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 5)
@@ -111,7 +112,7 @@ The circuit was then soldered together( Fig. 4)
 
 
 ## Final Prototype ##
-<span style="color:red;">Need to add the butterfly with wings, and the picture of the final product(Matilda's job) </span>
+<span style="color:red;">Need to add the butterfly with wings, and the picture of the final product, the picture right now is not right(Matilda's job) </span>
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
 After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
