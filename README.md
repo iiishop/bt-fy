@@ -28,7 +28,9 @@ We reinterpret this concept through remote communication: a simple movement made
 The butterfly therefore becomes both symbol and mechanism, representing how a minor action in one place can generate a meaningful emotional effect somewhere else.
 ​
 ## How It Works ###
-
+<p align="center">
+  <img src="Butterfly device system layout.jpg" width="300">
+</p>
 
 The system layout (Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
 
