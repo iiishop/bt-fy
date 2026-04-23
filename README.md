@@ -43,25 +43,16 @@ The spatial separation highlights the core concept of translating local physical
 ## Design Process ##
 
 ### Hardware 
+<p align="center">
+  <img src="hardware_1.png" width="30%" />
+  <img src="hardware_2.png" width="30%" />
+  <img src="hardware_3.png" width="30%" />
+</p>
 
+The system is built around the XIAO ESP32C3 , which provides both computation and wireless communication. A VL53L0X/VL53L1X  time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo (Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
 
-Our system integrates sensing, computation, and actuation using
-compact embedded hardware components:​
+All components are integrated into a 3D-printed butterfly enclosure with fabric wings, combining functional design with an expressive physical form.
 
-XIAO ESP32C3 (Main Controller)A compact microcontroller with
-built-in Wi-Fi capability, responsible for processing sensor data and
-handling communication with the mobile application.​
-
-VL53L0X / VL53L1X Distance Sensor (Presence Detection) A time-
-of-flight (ToF) sensor that measures distance with high precision,
-enabling reliable detection of human presence.​
-
-SG92R Servo Motor (Wing Flapping)A positional servo motor used
-to drive the butterfly wings, simulating natural flapping motion.​
-
-SG90-HV Continuous Servo (Rotation Feedback) A continuous
-rotation servo motor used to represent interaction duration
-through rotational movement.​
 
 ### Wiring
 image of wiring
