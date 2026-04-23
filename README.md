@@ -70,6 +70,7 @@ All components are integrated into a 3D-printed butterfly enclosure with fabric 
 During operation, the sensor continuously monitors distance. When a user is detected, the ESP32C3 triggers the local wing motion and simultaneously sends a signal via the mobile application to a paired remote device. The remote butterfly then replicates the flapping motion and rotates proportionally to the duration of presence, enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 4)
 
 ### The app
+**[This part needs to be more specifict(Yuqian's job)]**  
 The interaction logic in this system follows a clear three-stage flow: ​Users first add the device via its temporary SoftAP, ​then provide home WiFi for the device,​ and finally enter the control interface.​ After credentials are submitted, the remaining transition is handled automatically by the device, including connecting in STA mode to the target WiFi, auto-stopping SoftAP after a short delay, and bootstrapping control-related services on the local network. This design reduces onboarding friction while ensuring a smooth transition into a stable online control state.​
 
 ### The mechanism
@@ -123,8 +124,14 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
 ## Exceution of the project ##
 
 ### Hardware performance
-The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing.
-
+The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 5) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 5) was used instead, providing stable and safe power.
+<p align="center">
+  <img src="Li-ion Battery.png" width="50%" />
+  <img src="Power bank.png" width="50%" />
+</p>
+<p align="center">
+  <em>Fig. 5. Li-ion Battery and power bank</em>
+</p>
 
 
 
