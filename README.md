@@ -113,6 +113,7 @@ The circuit was then soldered together( Fig. 4)
 
 ## Final Prototype ##
 <span style="color:red;">Need to add the butterfly with wings, and the picture of the final product, the picture right now is not right(Matilda's job) </span>
+
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
 After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
