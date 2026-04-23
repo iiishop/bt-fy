@@ -95,7 +95,7 @@ This transition also impacted the enclosure design, as the servo had to be direc
 The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 3)
 
 <p align="center">
-  <img src="Soldered circuit.png" width="500">
+  <img src="Soldered circuit.jpg" width="500">
 </p>
 <p align="center">
   <em>Fig. 4.Soldered circuit</em>
