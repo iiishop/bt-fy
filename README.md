@@ -62,7 +62,7 @@ All components are integrated into a 3D-printed butterfly enclosure with fabric 
 
 ### Wiring
 <p align="center">
-  <img src="Circuit connection layout.png" width="800">
+  <img src="Circuit connection layout.png" width="500">
 </p>
 <p align="center">
   <em>Fig. 3.Circuit connection layout</em>
