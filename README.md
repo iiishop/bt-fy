@@ -24,9 +24,9 @@ The concept of the “butterfly effect” provides a theoretical framing, where 
 Concept: Butterfly Effect Installation
 
 The project is informed by the idea of the Butterfly Effect, where a small and seemingly insignificant action can create consequences elsewhere through an interconnected system.
-We reinterpret this concept through remote communication: a simple movement made by one person in one location triggers a physical response in another. Human presence is sensed and translated into the motion of butterfly wings at a distant site.
-The butterfly therefore becomes both symbol and mechanism, representing how a minor action in one place can generate a meaningful emotional effect somewhere else.
-​
+This concept is reinterpreted through remote communication, where a simple movement made by one person in one location is translated into a physical response in another. Human presence is sensed and converted into the motion of butterfly wings at a distant site.
+
+The butterfly is therefore positioned as both a symbol and a mechanism, through which a minor action in one place is able to generate a meaningful emotional effect elsewhere.
 ## How It Works ###
 <p align="center">
   <img src="Butterfly device system layout.png" width="1000">
@@ -55,20 +55,10 @@ The spatial separation highlights the core concept of translating local physical
   <em>Fig. 2. Hardware</em>
 </p>
 
-The system is built around the XIAO ESP32C3（Fig。2）, which provides both computation and wireless communication. A VL53L0X/VL53L1X（Fig. 2） time-of-flight sensor is used to detect human presence by measuring distance. Two servo motors are used for actuation: an SG92R servo(Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
+The system was built around the XIAO ESP32C3（Fig。2）, which provides both computation and wireless communication. A VL53L0X/VL53L1X（Fig. 2） time-of-flight sensor was used to detect human presence by measuring distance. Two servo motors were used for actuation: an SG92R servo(Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
 
 All components are integrated into a 3D-printed butterfly enclosure with fabric wings, combining functional design with an expressive physical form.
 
-
-### Wiring
-<p align="center">
-  <img src="Circuit connection layout.png" width="500">
-</p>
-<p align="center">
-  <em>Fig. 3.Circuit connection layout</em>
-</p>
-
-The circuit is centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 3)
 
 ### System workflow
 <p align="center">
@@ -84,24 +74,46 @@ The interaction logic in this system follows a clear three-stage flow: ​Users 
 
 ### The mechanism
 
-The design of the butterfly mechanism and enclosure evolved significantly throughout the project. As an IoT device with both mechanical and digital components, the hardware, structure, and code were tightly linked and had to adapt throughout.
+The design of the butterfly mechanism and enclosure evolved significantly throughout the project. As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
 
-We initially used a DC motor, which led to a hinge-based wing system driven by continuous rotation. We later moved to a servo motor, which shifted the mechanism to angle-based movement which <img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" />
-<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/fe21b5f7-841f-4c61-af70-57597cb8ca52" />
-<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/334ef84f-2c22-4e3d-a966-5a550d7b2f4d" />
-required changes in the code.
+Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
+<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" />
+
 
 This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​
 
 ### Development Process
+
+### Wiring and soldering
+<p align="center">
+  <img src="Circuit connection layout.png" width="500">
+</p>
+<p align="center">
+  <em>Fig. 3.Circuit connection layout</em>
+</p>
+
+The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 3)
+
+<p align="center">
+  <img src="Soldered circuit.png" width="500">
+</p>
+<p align="center">
+  <em>Fig. 4.Soldered circuit</em>
+</p>
+
+The circuit was then soldered together( Fig. 4)
+
+
 
 
 ## Final Prototype ##
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
-After experimenting with paper, card, leaves, and a range of fabrics for the wings, we found that the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
+After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
  a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
+
+
 
 ### Rotation
 In the final prototype, we were removed the rotational feature of the butterflies. The continuous rotation servo had originally been intended to represent the incremental accumulation of interactions over time, allowing users to perceive their partner’s ongoing activity. However, due to power constraints, the devices could not reliably operate on battery power and instead had to remain plugged into a wired supply. This physical arrangement restricted the rotational movement and made the feature impractical to retain.
@@ -110,9 +122,13 @@ As a result, the final prototype did not fully realise our original intention of
 
 Although this aspect was lost, the final design still successfully communicated physical presence through movement and continued to reflect the core aim of the project: making distant presence tangible through subtle kinetic response.
 
+## Exceution of the project ##
 
-### Materials to Get Started ###
-## Challenges
+
+
+
+
+## Challenges ##
 During development, we identified several practical challenges:​
 
 Power management​
