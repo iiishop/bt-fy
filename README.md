@@ -109,6 +109,7 @@ The circuit was centered around the XIAO ESP32C3, which serves as the main contr
 
 The circuit was then soldered together( Fig. 4)
 
+### Coding **[(coding part needs to be added by Yuqian)]**  
 
 
 
@@ -133,7 +134,11 @@ The circuit successfully supports the main functions of the system, including wi
   <em>Fig. 5. Li-ion Battery and power bank</em>
 </p>
 
-## Challenges ##
+### Communication and transmission **[(Yuqian)]**  
+
+### Overall product performance **[(can mention the rotation there) (matilda)]**  
+
+## Challenges ## **[(coding part needs to be added by Yuqian)]**  
 During development, we identified several practical challenges:​
 
 Power management​
@@ -148,7 +153,7 @@ Building multiple butterfly pairs increases hardware cost, so component selectio
 Connection stability​
 The system depends on stable communication between devices and the mobile app. Network interruptions or unstable pairing can reduce responsiveness and reliability.​
 
-## Improvements
+## Improvements **[(coding part needs to be added by Yuqian)]**  
 
 Based on the current limitations, we propose several directions for future improvement:​
 
