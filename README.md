@@ -112,7 +112,7 @@ The circuit was then soldered together( Fig. 4)
 
 
 ## Final Prototype ##
-<span style="color:red;">Need to add the butterfly with wings, and the picture of the final product, the picture right now is not right(Matilda's job) </span>
+**[Important]**  Need to add the butterfly with wings, and the picture of the final product, the picture right now is not right(Matilda's job)
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
