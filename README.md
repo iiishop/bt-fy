@@ -87,11 +87,11 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44"
-       style="width:30%; height:260px; object-fit:contain;" />
+       style="width:30%; height:300px; object-fit:contain;" />
   <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c"
-       style="width:30%; height:260px; object-fit:contain;" />
+       style="width:30%; height:300px; object-fit:contain;" />
   <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09"
-       style="width:30%; height:260px; object-fit:contain;" />
+       style="width:30%; height:300px; object-fit:contain;" />
 </p>
 <p align="center">
   <em>Fig. 5.3D enclosure model</em>
