@@ -135,7 +135,7 @@ The circuit was then soldered together( Fig. 7)
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
 </p>
 <p align="center">
-  <em>Fig. 8. The mechanics and enclosure</em>
+  <em>Fig. 8. Final prototype</em>
 </p>
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
@@ -146,7 +146,7 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
   <img src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" width="4032" height="2983">
 </p>
 <p align="center">
-  <em>Fig. 9. Final prototype</em>
+  <em>Fig. 9. Lasercut wings</em>
 </p>
 
 ## Exceution of the project ##
