@@ -135,28 +135,28 @@ The circuit was then soldered together( Fig. 7)
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
 </p>
 <p align="center">
-  <em>Fig. 5.The mechanics and enclosure</em>
+  <em>Fig. 8. The mechanics and enclosure</em>
 </p>
-
-
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
 After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
 
 <img width="4032" height="2983" alt="IMG_5526" src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" />
-
+<p align="center">
+  <em>Fig. 9. Final prototype</em>
+</p>
 
 ## Exceution of the project ##
 
 ### Hardware performance
-The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 5) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 5) was used instead, providing stable and safe power.
+The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 10) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 10) was used instead, providing stable and safe power.
 <p align="center">
   <img src="Li-ion Battery.jpg" width="35%" />
   <img src="Power bank.jpg" width="35%" />
 </p>
 <p align="center">
-  <em>Fig. 5. Li-ion Battery and power bank</em>
+  <em>Fig. 10. Li-ion Battery and power bank</em>
 </p>
 
 ### Communication and transmission **[(Yuqian)]**  
