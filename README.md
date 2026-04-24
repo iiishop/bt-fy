@@ -69,9 +69,9 @@ All components are integrated into a 3D-printed butterfly enclosure with fabric 
   <img src="System workflow.png" width="800">
 </p>
 <p align="center">
-  <em>Fig. 4.System workflow</em>
+  <em>Fig. 3.System workflow</em>
 </p>
-During operation, the sensor continuously monitors distance. When a user is detected, the ESP32C3 triggers the local wing motion and simultaneously sends a signal via the mobile application to a paired remote device. The remote butterfly then replicates the flapping motion and rotates proportionally to the duration of presence, enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 4)
+During operation, the sensor continuously monitors distance. When a user is detected, the ESP32C3 triggers the local wing motion and simultaneously sends a signal via the mobile application to a paired remote device. The remote butterfly then replicates the flapping motion and rotates proportionally to the duration of presence, enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
 
 ### The app
 **[This part needs to be more specifict(Yuqian's job)]**  
@@ -94,11 +94,11 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
        style="width:30%; height:300px; object-fit:contain;" />
 </p>
 <p align="center">
-  <em>Fig. 5.3D enclosure model</em>
+  <em>Fig. 4.3D enclosure model</em>
 </p>
 
 
-This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 5)
+This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 4)
 
 ## Development Process ##
 
@@ -107,19 +107,19 @@ This transition also impacted the enclosure design, as the servo had to be direc
   <img src="Circuit connection layout.png" width="500">
 </p>
 <p align="center">
-  <em>Fig. 3.Circuit connection layout</em>
+  <em>Fig. 5.Circuit connection layout</em>
 </p>
 
-The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 3)
+The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 5)
 
 <p align="center">
   <img src="Soldered circuit.jpg" width="500">
 </p>
 <p align="center">
-  <em>Fig. 4.Soldered circuit</em>
+  <em>Fig. 6.Soldered circuit</em>
 </p>
 
-The circuit was then soldered together( Fig. 4)
+The circuit was then soldered together( Fig. 6)
 
 ### Coding **[(coding part needs to be added by Yuqian)]**  
 
