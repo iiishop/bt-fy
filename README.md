@@ -1,33 +1,37 @@
-# Butterfly Effect Installation #
+<img width="1792" height="828" alt="IMG_5592" src="https://github.com/user-attachments/assets/89bef896-f9f2-4944-9bee-d8f94c4e358a" />
 
-## Introduction ###
 Kickstarter Video: https://youtu.be/o-Wq5kcca9Q​
 
-As digital communication becomes increasingly pervasive, remote interaction remains largely screen-based and information-driven. While messaging and video calls enable efficient exchange, they often fail to convey a subtle yet important dimension of human connection: the feeling of another person’s presence within one’s physical space. This challenge is central to research in Connected Environments, which explores how digital systems can be embedded into everyday settings through tangible and ambient forms of interaction rather than purely visual interfaces. Ishii and Ullmer’s concept of Tangible Bits highlights how digital information can be coupled with physical artefacts to support more spatial and embodied interaction (Ishii & Ullmer, 1997), while studies on ambient awareness suggest that small, continuous signals can accumulate into a meaningful sense of social presence over time (Thompson et al., 2011).
+# Butterfly Effect Installation #
+Matilda Nelson,
+Yitong Wu,
+Yuqian Lin.
 
-This project, Butterfly Effect, addresses this challenge by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
+## Introduction ###
 
-## The Problem ###
-Across distance, an important quality of communication is often lost: the feeling that another person is present in the same moment. Conventional messaging systems and notifications allow information to be exchanged efficiently, yet they rarely convey a sense of real-time physical presence or shared space. Existing technologies primarily prioritise explicit information exchange, leaving limited support for subtle, non-verbal aspects of connection. As a result, remote interaction often lacks the immediacy and emotional nuance associated with co-located presence.
+  The capacity to communicate at a distance has expanded enormously but the experience of shared physical presence has proven considerably harder to replicate. While messaging and video calls enable efficient exchange, they often fail to convey an important dimension of human connection: the feeling of another person’s presence within one’s physical space. This challenge sits at the heart of Connected Environments which investigates how digital systems and IoT technologies can bridge people and places across distance. This project was developed as part of the Connected Environments Group Prototype and Pitch 25/26, with the brief to design a device or service that connects people across the miles.
 
-This raises a key question for this project:
+Within this project, we were centrally concerned with communicating physicality through non-screen-based technology. Ishii and Ullmer's concept of Tangible Bits provided a foundational reference point, establishing that digital information can be embedded in physical artefacts to engage the body and environment rather than the screen alone (Ishii & Ullmer, 1997). The project also draws on animism to translate the feeling of presence, by using the physical movement of something that looks alive to convey the sense of another person being in the room with you.
 
-How can presence be made tangible across distance?
+This project, Butterfly Effect, addresses presence by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
 
-## Motivation ###
+### The Problem ###
+
+How can presence be made tangible across the miles?
+
+## How are we doing this? ###
+
 The Butterfly Effect installation transforms human presence into a physical, perceivable signal through a pair of networked butterfly devices. When a user approaches one device, both respond through synchronous wing movement and rotation, enabling presence in one space to be felt in another. By shifting communication from explicit information exchange to embodied environmental feedback, the system explores alternative ways of mediating connection at a distance. Research in mediated social touch suggests that non-verbal and haptic interaction can enhance emotional connectedness in remote communication (van Erp & Toet, 2015).
 
-The concept of the “butterfly effect” provides a theoretical framing, where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). Here, this principle is translated into interaction design, allowing minor everyday actions to produce visible effects elsewhere.
 
 ## Concept ###
 
-Concept: Butterfly Effect Installation
+The Butterfly Effect Installation
 
-The project is informed by the idea of the Butterfly Effect, where a small and seemingly insignificant action can create consequences elsewhere through an interconnected system.
-This concept is reinterpreted through remote communication, where a simple movement made by one person in one location is translated into a physical response in another. Human presence is sensed and converted into the motion of butterfly wings at a distant site.
+Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and reinterpreted through remote communication: when a person moves past their installation, the butterfly on their paired device rotates creating a cumulative record of presence throughout the day. If the butterflies are all rotated, the other person has been there; if they are all aligned, they have not. When either person interacts, both butterflies flutter simultaneously sharing a live signal of connection. The butterfly is therefore positioned as both a symbol and a mechanism, through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
 
-The butterfly is therefore positioned as both a symbol and a mechanism, through which a minor action in one place is able to generate a meaningful emotional effect elsewhere.
 ## How It Works ###
+
 <p align="center">
   <img src="Butterfly device system layout.png" width="1000">
 </p>
@@ -77,8 +81,13 @@ The interaction logic in this system follows a clear three-stage flow: ​Users 
 
 The design of the butterfly mechanism and enclosure evolved significantly throughout the project. As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
 
+<img width="1920" height="1080" alt="F6A2C7E4-8615-473A-9D37-93429B703A79" src="https://github.com/user-attachments/assets/bad917df-0edb-43a8-a31f-ad038adc3989" />
+
 Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
+
+<img width="756" height="1008" alt="IMG_2714" src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44" /> <img width="540" height="960" alt="74EF2B71-E7FE-44D3-B068-7ACAED620511" src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c" />
 <p align="center">
+  
   <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" width="800">
 </p>
 <p align="center">
@@ -114,12 +123,15 @@ The circuit was then soldered together( Fig. 4)
 
 
 ## Final Prototype ##
-**[ Need to add the butterfly with wings, and the picture of the final product, the picture right now is not right(Matilda's job)]**  
+
+<img width="493" height="574.2" alt="IMG_5524" src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" />
+
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
-After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce<img width="1920" height="1080" alt="3d model 2 butterfly" src="https://github.com/user-attachments/assets/a5f64b47-dd6a-4f20-97ac-c37b79e68127" />
- a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
+After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
+
+<img width="4032" height="2983" alt="IMG_5526" src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" />
 
 
 ## Exceution of the project ##
