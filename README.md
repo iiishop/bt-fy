@@ -124,7 +124,13 @@ The circuit was then soldered together( Fig. 4)
 
 ## Final Prototype ##
 
-<img width="493" height="574.2" alt="IMG_5524" src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
+</p>
+<p align="center">
+  <em>Fig. 5.The mechanics and enclosure</em>
+</p>
+
 
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
