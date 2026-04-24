@@ -142,7 +142,9 @@ The mechanics and enclosure were designed to be compact, integrating a microcont
 
 After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
 
-<img width="4032" height="2983" alt="IMG_5526" src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" width="4032" height="2983">
+</p>
 <p align="center">
   <em>Fig. 9. Final prototype</em>
 </p>
