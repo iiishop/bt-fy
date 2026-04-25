@@ -75,16 +75,31 @@ During operation, the sensor continuously monitors distance. When a user is dete
 
 ### The app
 **[This part needs to be more specifict(Yuqian's job)]**  
-The interaction logic in this system follows a clear three-stage flow: ​Users first add the device via its temporary SoftAP, ​then provide home WiFi for the device,​ and finally enter the control interface.​ After credentials are submitted, the remaining transition is handled automatically by the device, including connecting in STA mode to the target WiFi, auto-stopping SoftAP after a short delay, and bootstrapping control-related services on the local network. This design reduces onboarding friction while ensuring a smooth transition into a stable online control state.​
+The mobile application was developed as the main interface between the user and the butterfly devices. As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. In practice, it was used to bring devices online, check whether they were reachable on the network, test motor behaviour during development, and connect one butterfly to another.
+
+<p align="center">
+  <img src="Add device.png" width="30%" />
+  <img src="Configure Wifi.png" width="30%" />
+  <img src="Control and Pair.png" width="30%" />
+</p>
+<p align="center">
+  <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
+</p>
+
+Its first role was Wi-Fi provisioning. During setup, each ESP32 device opened a temporary Soft-AP, which allowed the app to find it by its hotspot prefix and connect to it directly. The app then identified the device and sent the Wi-Fi credentials needed for the device to join the home network. Once this was completed, the device closed its Soft-AP and switched to STA mode. After joining the local network, the device broadcast its presence so that the app could update its IP address, monitor whether it was online, and maintain communication for later control.
+
+The second role of the app was pairing and binding. This was necessary because the project was not intended as a standalone interactive object, but as a linked system between two distant users. If one user had a device and another user had a second device, the two could be paired by sharing and entering the target device ID in the app. After binding, the devices could operate together, allowing activity detected in one location to produce movement and response in the other.
+
+This Soft-AP to provisioning to STA workflow was adopted for practical reasons. The devices needed internet connectivity in order to support communication over long distances rather than only within a single local network. It also simplified the setup process. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
 
 ### The mechanism
 
-The design of the butterfly mechanism and enclosure evolved significantly throughout the project.(Fig. 4) As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
+The design of the butterfly mechanism and enclosure evolved significantly throughout the project.(Fig. 5) As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
 
 <img width="1920" height="1080" alt="F6A2C7E4-8615-473A-9D37-93429B703A79" src="https://github.com/user-attachments/assets/bad917df-0edb-43a8-a31f-ad038adc3989" />
 </p>
 <p align="center">
-  <em>Fig. 4. Designing the butterfly mechanism</em>
+  <em>Fig. 5. Designing the butterfly mechanism</em>
 </p>
 
 Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
@@ -98,11 +113,11 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
        style="width:30%; height:300px; object-fit:contain;" />
 </p>
 <p align="center">
-  <em>Fig. 5. 3D enclosure model</em>
+  <em>Fig. 6. 3D enclosure model</em>
 </p>
 
 
-This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 5)
+This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 6)
 
 ## Development Process ##
 
@@ -111,19 +126,19 @@ This transition also impacted the enclosure design, as the servo had to be direc
   <img src="Circuit connection layout.png" width="500">
 </p>
 <p align="center">
-  <em>Fig. 6. Circuit connection layout</em>
+  <em>Fig. 7. Circuit connection layout</em>
 </p>
 
-The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 6)
+The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 7)
 
 <p align="center">
   <img src="Soldered circuit.jpg" width="500">
 </p>
 <p align="center">
-  <em>Fig. 7. Soldered circuit</em>
+  <em>Fig. 8. Soldered circuit</em>
 </p>
 
-The circuit was then soldered together( Fig. 7)
+The circuit was then soldered together( Fig. 8)
 
 ### Coding **[(coding part needs to be added by Yuqian)]**  
 
@@ -135,7 +150,7 @@ The circuit was then soldered together( Fig. 7)
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
 </p>
 <p align="center">
-  <em>Fig. 8. Final prototype</em>
+  <em>Fig. 9. Final prototype</em>
 </p>
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
@@ -146,7 +161,7 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
   <img src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" width="4032" height="2983">
 </p>
 <p align="center">
-  <em>Fig. 9. Lasercut wings</em>
+  <em>Fig. 10. Lasercut wings</em>
 </p>
 
 ## Exceution of the project ##
@@ -158,7 +173,7 @@ The circuit successfully supports the main functions of the system, including wi
   <img src="Power bank.jpg" width="35%" />
 </p>
 <p align="center">
-  <em>Fig. 10. Li-ion Battery and power bank</em>
+  <em>Fig. 11. Li-ion Battery and power bank</em>
 </p>
 
 ### Communication and transmission **[(Yuqian)]**  
