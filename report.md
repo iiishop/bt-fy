@@ -23,9 +23,9 @@ How can presence be made tangible across the miles?
 
 The Butterfly Effect Installation
 
-Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and reinterpreted through remote communication: when a person moves past their installation, the butterfly on their paired device rotates creating a cumulative record of presence throughout the day. If the butterflies are all rotated, the other person has been there; if they are all aligned, they have not. When either person interacts, both butterflies flutter simultaneously sharing a live signal of connection. The butterfly is therefore positioned as both a symbol and a mechanism, through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
+Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and remote communication. Two installations of butterfly walls exists at two different locations. Each butterfly has a distance sensor and is paired to another butterfly from the other location. When a person moves past their installation both paired butterflies flutter simultaneously sharing a live signal of connection. One could be sitting at home, looking up at the wall of butterflies and see as they flutter from left to right, meaning their loved one just moved through the space. When one installation is interacted with as well as fluttering, the butterfly on the other installation rotates. This creates a cumulative record of presence throughout the day. If you notice all the butterflies are rotated in different directions, this is a sign a person has been there; if they are all aligned, they have not.  The butterfly is therefore positioned as both a symbol and a mechanism, through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
 
-The Butterfly Effect installation transforms presence into a physical, perceivable signal through an installation of paired of networked butterfly devices. When a user approaches one device, both respond through synchronous wing movement and rotation. By shifting communication from explicit information exchange to embodied environmental feedback, the installation explores alternative ways of mediating connection at a distance. Rather than transmitting messages or images, it asks whether presence itself ( the simple fact of someone having been somewhere, or being there now) can be felt through a physical object. This moves the register of communication from the cognitive to the atmospheric: something you notice in the corner of your eye rather than something you read. Research in mediated social touch supports this direction, suggesting that non-verbal and haptic interaction can enhance emotional connectedness in remote communication more effectively than information-dense channels alone (van Erp & Toet, 2015)
+By shifting communication from explicit information exchange to embodied environmental feedback, the installation explores alternative ways of mediating connection at a distance. Rather than transmitting messages or images, it asks whether presence itself ( the simple fact of someone having been somewhere, or being there now) can be felt through a physical object. This moves the register of communication from the cognitive to the atmospheric: something you notice in the corner of your eye rather than something you read. Research in mediated social touch supports this direction, suggesting that non-verbal and haptic interaction can enhance emotional connectedness in remote communication more effectively than information-dense channels alone (van Erp & Toet, 2015)
 
 ## How It Works
 
@@ -38,11 +38,11 @@ The Butterfly Effect installation transforms presence into a physical, perceivab
 
 The system layout (Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
 
-At Location A, a proximity sensor detects the user’s distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
+At Location A, a distance sensor detects the user’s distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
 
-At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This tangential movement encodes the duration or accumulation of interactions over time.
+At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This rotational movement encodes the duration or accumulation of interactions over time.
 
-The spatial separation highlights the core concept of translating local physical actions into remote, perceivable effects. By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Multiple butterfly units can also be arranged on a wall to respond simultaneously, amplifying the perceived effect.
+By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Each butterfly has its own independent microcontroler, sensor and actuators, meaning that the installation is modular, and accumulative butterfly units can be arranged on a wall to respond simultaneously to amplify the three dimensional effect of presence in one's space.
 
 ## Design Process
 
@@ -56,9 +56,11 @@ The spatial separation highlights the core concept of translating local physical
   <em>Fig. 2. Hardware</em>
 </p>
 
-The system was built around the XIAO ESP32C3 (Fig. 2), which provides both computation and wireless communication. A VL53L0X/VL53L1X (Fig. 2) time-of-flight sensor was used to detect human presence by measuring distance. Two servo motors were used for actuation: an SG92R servo (Fig. 2) drives the flapping of the butterfly wings, while an SG90-HV continuous servo provides rotational feedback to represent the duration of interaction.
+- The system was built around the XIAO ESP32C3 (Fig. 2), which provides both computation and wireless communication.
 
-All components were integrated into a 3D-printed butterfly enclosure with fabric wings, combining functional design with an expressive physical form.
+- A VL53L0X/VL53L1X (Fig. 2) time-of-flight sensor was used to detect human presence by measuring distance.
+  
+- Two servo motors were used for actuation: a SG92R servo (Fig. 2) which drives the flapping of the butterfly wings, and a SG90-HV continuous servo which drives the rotation to represent the duration of interaction.
 
 
 ### System workflow
@@ -68,7 +70,7 @@ All components were integrated into a 3D-printed butterfly enclosure with fabric
 <p align="center">
   <em>Fig. 3. System workflow</em>
 </p>
-During operation, the sensor continuously monitors distance. When a user was detected, the ESP32C3 triggered the local wing motion and simultaneously sends a signal via the mobile application to a paired remote device. The remote butterfly then replicated the flapping motion and rotated proportionally to the duration of presence, enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
+During operation, the sensor continuously monitors distance. When a user passes in from of the sensor within the detectable range, the ESP32C3 triggers the local wing motion of the 180 degree motor and simultaneously sends a signal via the mobile application to its paired remote device. The remote butterfly then replicates the flapping motion of the first butterfly (speed and angle depending on the distance to the butterfly) and rotates proportionally to the duration of the interaction, every 10s of interaction, the servo will rotate for 1s. enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
 
 ### The app  
 The mobile application was developed as the main interface between the user and the butterfly devices. As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. In practice, it was used to bring devices online, check whether they were reachable on the network, test motor behaviour during development, and connect one butterfly to another.
@@ -111,7 +113,6 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
 <p align="center">
   <em>Fig. 6. 3D enclosure model</em>
 </p>
-
 
 This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 6)
 
