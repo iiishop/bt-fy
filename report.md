@@ -36,12 +36,8 @@ By shifting communication from explicit information exchange to embodied environ
   <em>Fig. 1. Butterfly device system layout</em>
 </p>
 
-The system layout (Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
-
 At Location A, a distance sensor detects the user's distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
-
 At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This rotational movement encodes the duration or accumulation of interactions over time.
-
 By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Each butterfly has its own independent microcontroler, sensor and actuators, meaning that the installation is modular, and accumulative butterfly units can be arranged on a wall to respond simultaneously to amplify the three dimensional effect of presence in the space.
 
 ## Design Process
@@ -89,8 +85,7 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
 This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 6)
 
 ### The app  
-The mobile application was developed as the main interface between the user and the butterfly devices. As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. In practice, it was used to bring devices online, check whether they were reachable on the network, test motor behaviour during development, and connect one butterfly to another.
-
+As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
 <p align="center">
   <img src="Add device.png" width="30%" />
   <img src="Configure Wifi.png" width="30%" />
@@ -99,12 +94,6 @@ The mobile application was developed as the main interface between the user and 
 <p align="center">
   <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
 </p>
-
-Its first role was Wi-Fi provisioning. During setup, each ESP32 device opened a temporary Soft-AP, which allowed the app to find it by its hotspot prefix and connect to it directly. The app then identified the device and sent the Wi-Fi credentials needed for the device to join the home network. Once this was completed, the device closed its Soft-AP and switched to STA mode. After joining the local network, the device broadcast its presence so that the app could update its IP address, monitor whether it was online, and maintain communication for later control.
-
-The second role of the app was pairing and binding. This was necessary because the project was not intended as a standalone interactive object, but as a linked system between two distant users. If one user had a device and another user had a second device, the two could be paired by sharing and entering the target device ID in the app. After binding, the devices could operate together, allowing activity detected in one location to produce movement and response in the other.
-
-This Soft-AP to provisioning to STA workflow was adopted for practical reasons. The devices needed internet connectivity in order to support communication over long distances rather than only within a single local network. It also simplified the setup process. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
 
 ### System workflow
 <p align="center">
