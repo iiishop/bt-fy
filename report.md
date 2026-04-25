@@ -9,9 +9,9 @@ Yuqian Lin.
 
 ## Introduction
 
-  The capacity to communicate at a distance has expanded enormously but the experience of shared physical presence has proven considerably harder to replicate. While messaging and video calls enable efficient exchange, they often fail to convey an important dimension of human connection: the feeling of another person’s presence within one’s physical space. This challenge sits at the heart of Connected Environments which investigates how digital systems and IoT technologies can bridge people and places across distance. This project was developed as part of the Connected Environments Group Prototype and Pitch 25/26, with the brief to design a device or service that connects people across the miles.
+The capacity to communicate at a distance has expanded enormously but the experience of shared physical presence has proven considerably harder to replicate. While messaging and video calls enable efficient exchange, they often fail to convey an important dimension of human connection: the feeling of another person's presence within one's physical space. This challenge sits at the heart of Connected Environments which investigates how digital systems and IoT technologies can bridge people and places across distance. This project was developed as part of the Connected Environments Group Prototype and Pitch 25/26, with the brief to design a device or service that connects people across the miles.
 
-Within this project, we were centrally concerned with communicating physicality through non-screen-based technology. Ishii and Ullmer's concept of Tangible Bits provided a foundational reference point, establishing that digital information can be embedded in physical artefacts to engage the body and environment rather than the screen alone (Ishii & Ullmer, 1997). The project also draws on animism to translate the feeling of presence, by using the physical movement of something that looks alive to convey the sense of another person being in the room with you.
+Within this project, we were centrally concerned with communicating physicality through non-screen-based technology. Ishii and Ullmer's concept of Tangible Bits provided a foundational reference point, establishing that digital information can be embedded in physical artefacts to engage the body and environment rather than the screen alone (Ishii & Ullmer, 1997). Our project also draws on animism to translate the feeling of presence, by using the physical movement of something that looks alive to convey the sense of another person being in the room with you.
 
 This project, Butterfly Effect, addresses presence by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
 
@@ -23,9 +23,9 @@ How can presence be made tangible across the miles?
 
 The Butterfly Effect Installation
 
-Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and remote communication. Two installations of butterfly walls exists at two different locations. Each butterfly has a distance sensor and is paired to another butterfly from the other location. When a person moves past their installation both paired butterflies flutter simultaneously sharing a live signal of connection. One could be sitting at home, looking up at the wall of butterflies and see as they flutter from left to right, meaning their loved one just moved through the space. When one installation is interacted with as well as fluttering, the butterfly on the other installation rotates. This creates a cumulative record of presence throughout the day. If you notice all the butterflies are rotated in different directions, this is a sign a person has been there; if they are all aligned, they have not.  The butterfly is therefore positioned as both a symbol and a mechanism, through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
+Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and remote communication. Two installations of butterfly walls exist at two different locations. Each butterfly has a distance sensor and is paired to another butterfly from the other location. When a person moves past their installation both paired butterflies flutter simultaneously sharing a live signal of connection. One could be sitting at home, looking up at the wall of butterflies and see them flutter from left to right, meaning their loved one just moved through the space. When one installation is interacted with, the paired butterfly on the other installation rotates, this creates a cumulative record of presence throughout the day. If you notice all the butterflies are rotated in different directions, this is a sign a person has been there; if they are all aligned or unchanged, they have not.  The butterfly is therefore positioned as both a symbol and a mechanism through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
 
-By shifting communication from explicit information exchange to embodied environmental feedback, the installation explores alternative ways of mediating connection at a distance. Rather than transmitting messages or images, it asks whether presence itself ( the simple fact of someone having been somewhere, or being there now) can be felt through a physical object. This moves the register of communication from the cognitive to the atmospheric: something you notice in the corner of your eye rather than something you read. Research in mediated social touch supports this direction, suggesting that non-verbal and haptic interaction can enhance emotional connectedness in remote communication more effectively than information-dense channels alone (van Erp & Toet, 2015)
+By shifting communication from explicit information exchange to embodied environmental feedback, the installation explores alternative ways of mediating connection at a distance. Rather than transmitting messages or images, it asks whether presence itself (the simple fact of someone having been somewhere, or being there now) can be felt through a physical object. This moves the register of communication from the cognitive to the atmospheric: something you notice in the corner of your eye rather than something you read. Research in mediated social touch supports this direction, suggesting that non-verbal and haptic interaction can enhance emotional connectedness in remote communication more effectively than information-dense channels alone (van Erp & Toet, 2015)
 
 ## How It Works
 
@@ -38,11 +38,11 @@ By shifting communication from explicit information exchange to embodied environ
 
 The system layout (Fig. 1) presents a networked interaction between two butterfly devices located in separate spaces and connected via the internet. Each device integrates sensing, communication, and actuation to enable real-time, bidirectional interaction.
 
-At Location A, a distance sensor detects the user’s distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
+At Location A, a distance sensor detects the user's distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
 
 At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This rotational movement encodes the duration or accumulation of interactions over time.
 
-By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Each butterfly has its own independent microcontroler, sensor and actuators, meaning that the installation is modular, and accumulative butterfly units can be arranged on a wall to respond simultaneously to amplify the three dimensional effect of presence in one's space.
+By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Each butterfly has its own independent microcontroler, sensor and actuators, meaning that the installation is modular, and accumulative butterfly units can be arranged on a wall to respond simultaneously to amplify the three dimensional effect of presence in the space.
 
 ## Design Process
 
@@ -58,37 +58,9 @@ By combining immediate feedback (flapping) with longer-term representation (rota
 
 - The system was built around the XIAO ESP32C3 (Fig. 2), which provides both computation and wireless communication.
 
-- A VL53L0X/VL53L1X (Fig. 2) time-of-flight sensor was used to detect human presence by measuring distance.
+- The A VL53L0X/VL53L1X (Fig. 2) time-of-flight sensor was used to detect human presence by measuring distance.
   
 - Two servo motors were used for actuation: a SG92R servo (Fig. 2) which drives the flapping of the butterfly wings, and a SG90-HV continuous servo which drives the rotation to represent the duration of interaction.
-
-
-### System workflow
-<p align="center">
-  <img src="System workflow.png" width="800">
-</p>
-<p align="center">
-  <em>Fig. 3. System workflow</em>
-</p>
-During operation, the sensor continuously monitors distance. When a user passes in from of the sensor within the detectable range, the ESP32C3 triggers the local wing motion of the 180 degree motor and simultaneously sends a signal via the mobile application to its paired remote device. The remote butterfly then replicates the flapping motion of the first butterfly (speed and angle depending on the distance to the butterfly) and rotates proportionally to the duration of the interaction, every 10s of interaction, the servo will rotate for 1s. enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
-
-### The app  
-The mobile application was developed as the main interface between the user and the butterfly devices. As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. In practice, it was used to bring devices online, check whether they were reachable on the network, test motor behaviour during development, and connect one butterfly to another.
-
-<p align="center">
-  <img src="Add device.png" width="30%" />
-  <img src="Configure Wifi.png" width="30%" />
-  <img src="Control and Pair.png" width="30%" />
-</p>
-<p align="center">
-  <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
-</p>
-
-Its first role was Wi-Fi provisioning. During setup, each ESP32 device opened a temporary Soft-AP, which allowed the app to find it by its hotspot prefix and connect to it directly. The app then identified the device and sent the Wi-Fi credentials needed for the device to join the home network. Once this was completed, the device closed its Soft-AP and switched to STA mode. After joining the local network, the device broadcast its presence so that the app could update its IP address, monitor whether it was online, and maintain communication for later control.
-
-The second role of the app was pairing and binding. This was necessary because the project was not intended as a standalone interactive object, but as a linked system between two distant users. If one user had a device and another user had a second device, the two could be paired by sharing and entering the target device ID in the app. After binding, the devices could operate together, allowing activity detected in one location to produce movement and response in the other.
-
-This Soft-AP to provisioning to STA workflow was adopted for practical reasons. The devices needed internet connectivity in order to support communication over long distances rather than only within a single local network. It also simplified the setup process. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
 
 ### The mechanism
 
@@ -116,6 +88,33 @@ Initially, a DC motor was used, resulting in a hinge-based wing system driven by
 
 This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 6)
 
+### The app  
+The mobile application was developed as the main interface between the user and the butterfly devices. As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. In practice, it was used to bring devices online, check whether they were reachable on the network, test motor behaviour during development, and connect one butterfly to another.
+
+<p align="center">
+  <img src="Add device.png" width="30%" />
+  <img src="Configure Wifi.png" width="30%" />
+  <img src="Control and Pair.png" width="30%" />
+</p>
+<p align="center">
+  <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
+</p>
+
+Its first role was Wi-Fi provisioning. During setup, each ESP32 device opened a temporary Soft-AP, which allowed the app to find it by its hotspot prefix and connect to it directly. The app then identified the device and sent the Wi-Fi credentials needed for the device to join the home network. Once this was completed, the device closed its Soft-AP and switched to STA mode. After joining the local network, the device broadcast its presence so that the app could update its IP address, monitor whether it was online, and maintain communication for later control.
+
+The second role of the app was pairing and binding. This was necessary because the project was not intended as a standalone interactive object, but as a linked system between two distant users. If one user had a device and another user had a second device, the two could be paired by sharing and entering the target device ID in the app. After binding, the devices could operate together, allowing activity detected in one location to produce movement and response in the other.
+
+This Soft-AP to provisioning to STA workflow was adopted for practical reasons. The devices needed internet connectivity in order to support communication over long distances rather than only within a single local network. It also simplified the setup process. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
+
+### System workflow
+<p align="center">
+  <img src="System workflow.png" width="800">
+</p>
+<p align="center">
+  <em>Fig. 3. System workflow</em>
+</p>
+During operation, the sensor continuously monitors distance. When a user passes in from of the sensor within the detectable range, the ESP32C3 triggers the local wing motion of the 180 degree motor and simultaneously sends a signal via the mobile application to its paired remote device. The remote butterfly then replicates the flapping motion of the first butterfly (speed and angle depending on the distance to the butterfly) and rotates proportionally to the duration of the interaction, every 10s of interaction, the servo will rotate for 1s. enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
+
 ## Development Process
 
 ### Wiring and soldering
@@ -126,7 +125,7 @@ This transition also impacted the enclosure design, as the servo had to be direc
   <em>Fig. 7. Circuit connection layout</em>
 </p>
 
-The circuit was centered around the XIAO ESP32C3, which serves as the main controller for sensing, processing, and communication. A VL53L0X/VL53L1X distance sensor is connected via I²C (D0 as SCL, D3 as SDA) to detect human presence in real time. Two servo motors act as outputs: the SG92R servo (connected to D1) controls wing flapping, while the SG90-HV continuous servo (connected to D2) provides rotational motion to represent interaction duration. Both servos are driven by PWM signals from the microcontroller. (Fig. 7)
+The distance sensor detects human presence in real time via I²C connection. When triggered, PWM signals from the microcontroller drive the two servo motors, one controlling the wing flapping, the other the rotational motion. (Fig. 7)
 
 <p align="center">
   <img src="Soldered circuit.jpg" width="500">
@@ -210,7 +209,6 @@ When the device receives a successful pairing response, it updates the active pa
 #### Summary
 Taken together, this part of the project brings local sensing, mechanical motion, network provisioning, and remote linkage into the same system. The Rust-based embedded software handles sensing, actuation, and state synchronisation between devices, while the Flutter app makes configuration and pairing manageable from the user side. The result is a networked interactive system in which local bodily presence can be translated into physical feedback at a distance.
 
-
 ## Final Prototype ##
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
@@ -221,7 +219,7 @@ Taken together, this part of the project brings local sensing, mechanical motion
 
 The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
 
-After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle “flop” or “flutter” in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
+After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle "flop" or "flutter" in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" width="4032" height="2983">
@@ -230,10 +228,7 @@ After experimenting with paper, card, leaves, and a range of fabrics for the win
   <em>Fig. 13. Lasercut wings</em>
 </p>
 
-## Execution of the project
-
-### Hardware performance
-The circuit successfully supports the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 14) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 14) was used instead, providing stable and safe power.
+The circuit successfully supported the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 14) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 14) was used instead, providing stable and safe power.
 <p align="center">
   <img src="Li-ion Battery.jpg" width="35%" />
   <img src="Power bank.jpg" width="35%" />
@@ -279,7 +274,7 @@ A further challenge came from the limited resources of the ESP32-C3 itself. The 
 Based on the current limitations, we propose several directions for future improvement:​
 
 Improved power system​
-Redesign the battery solution to increase capacity and support longer operation time, for example a “deep sleep mode”, including safer and more accessible charging methods.​
+Redesign the battery solution to increase capacity and support longer operation time, for example a "deep sleep mode", including safer and more accessible charging methods.​
 
 Robust hardware integration​
 Develop a more reliable power connection to replace the fragile VBAT soldering, and improve internal structural design for durability.​
@@ -305,7 +300,7 @@ Extend the system to encode more information (e.g., intensity, frequency, patter
 ## Reflections
 In this project, a networked physical system was designed and built to transform human presence into a tangible and observable signal. The Butterfly Effect system enables users to perceive the presence of others across distance in a subtle and intuitive way. Unlike conventional digital communication, this approach emphasizes physical feedback and emotional awareness, creating a more meaningful connection between people.
 
-While the prototype demonstrates the potential of IoT systems for remote, embodied interaction, several limitations remain. The use of a power bank, although improving reliability, introduced additional size and weight that interfered with the butterfly’s rotational movement, reducing the effectiveness of the physical interaction. Furthermore, instability caused by manual wiring highlights the limitations of ad-hoc prototyping in compact embedded systems.
+While the prototype demonstrates the potential of IoT systems for remote, embodied interaction, several limitations remain. The use of a power bank, although improving reliability, introduced additional size and weight that interfered with the butterfly's rotational movement, reducing the effectiveness of the physical interaction. Furthermore, instability caused by manual wiring highlights the limitations of ad-hoc prototyping in compact embedded systems.
 
 These challenges reveal a trade-off between electrical reliability and mechanical performance, indicating the need for more integrated and robust design solutions in future iterations. Overall, the project shows that small physical actions can be translated into meaningful connections across distance.​
 
@@ -315,11 +310,10 @@ Wu Yitong: The hardware and circuit design were completed, including component i
 Lin Yuqian: All software and code-related parts of the project were developed, including the mobile application, the ESP32 communication protocol, device provisioning, local network discovery, binding, pairing, control functions, and the hardware control logic for sensing and actuation. The coordination between the Flutter app and the ESP32 system was implemented and refined to support setup, status monitoring, and synchronised interaction between paired devices. The app, coding, and communication sections of the report were also written and developed.
 
 ### References
-	Ishii, H. and Ullmer, B. (1997) ‘Tangible bits: Towards seamless interfaces between people, bits and atoms’, Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI ’97), pp. 234–241.
+	Ishii, H. and Ullmer, B. (1997) 'Tangible bits: Towards seamless interfaces between people, bits and atoms', Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI '97), pp. 234–241.
 
-	Thompson, S.A., Kennedy, R., and Lomas, D. (2011) ‘Ambient awareness: From random noise to digital closeness in social media’, Proceedings of the SIGCHI Conference on Human Factors in Computing Systems, pp. 237–246.
+	Thompson, S.A., Kennedy, R., and Lomas, D. (2011) 'Ambient awareness: From random noise to digital closeness in social media', Proceedings of the SIGCHI Conference on Human Factors in Computing Systems, pp. 237–246.
 
-	van Erp, J.B.F. and Toet, A. (2015) ‘Social touch in human–computer interaction’, Frontiers in Digital Humanities, 2(2), pp. 1–13.
+	van Erp, J.B.F. and Toet, A. (2015) 'Social touch in human–computer interaction', Frontiers in Digital Humanities, 2(2), pp. 1–13.
 
-	Lorenz, E.N. (1963) ‘Deterministic nonperiodic flow’, Journal of the Atmospheric Sciences, 20(2), pp. 130–141.
-
+	Lorenz, E.N. (1963) 'Deterministic nonperiodic flow', Journal of the Atmospheric Sciences, 20(2), pp. 130–141.
