@@ -138,14 +138,17 @@ From an interaction perspective, the system created a sense of connection betwee
 
 **1.Power management**
 The system was designed to operate using a compact Li-ion battery, but the small and fragile VBAT interface on the XIAO ESP32C3 made stable integration difficult, leading to unreliable connections and safety risks. An external power bank was used instead, which improved stability but introduced additional weight and restricted movement.
+
 **2. Mechanical precision and control**
 The continuous rotation servo required time-based control rather than positional feedback, leading to inconsistencies in rotation and reducing the system's ability to accurately represent accumulated presence over time.
+
 **3. Communication and synchronisation**
 Maintaining synchronised behaviour between paired devices required frequent updates, placing a significant load on the ESP32-C3. When sensing, actuation, and communication occurred simultaneously, delays or instability could arise.
+
 **4. Provisioning and usability**
 The transition from Soft-AP setup to normal Wi-Fi operation depended on the behaviour of the user's mobile device, which could not always be controlled programmatically, sometimes requiring manual reconnection.
 
-Improvements
+## Improvements
 
 **1. Improved power system**
 The system could integrate a dedicated battery management module and more robust power interface, alongside low-power strategies such as deep sleep modes, enabling stable and portable operation without relying on an external power bank.
