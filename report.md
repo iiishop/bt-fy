@@ -79,21 +79,28 @@ Communication is divided into two channels. UDP is used for lightweight broadcas
 
 The pairing mechanism enables two devices to form a persistent connection. Once paired, local sensing events trigger synchronised behaviour on the remote device. This is achieved by transmitting motion-related parameters, allowing the paired device to replicate the interaction in real time. The system therefore supports a distributed interaction model, where local physical activity is translated into remote mechanical feedback.
 <p align="center">
-  <img src="imageE.png" width="900">
+  <img src="image.png" width="900">
 </p>
 <p align="center">
-  <em>Fig. 8. Device pairing and synchronised interaction sequence</em>
+  <em>Fig. 6. Device pairing and synchronised interaction sequence</em>
 </p>
 
 The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
-
+<p align="center">
+  <img src="Add device.png" width="30%" />
+  <img src="Configure Wifi.png" width="30%" />
+  <img src="Control and Pair.png" width="30%" />
+</p>
+<p align="center">
+  <em>Fig. 7. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
+</p>
 ### Hardware Implementation
 The hardware connections were implemented as follows: the VL53L0X/VL53L1X distance sensor was connected to the XIAO ESP32C3 via the I²C interface, using D0 as SCL and D3 as SDA. Two servo motors were connected to PWM-capable pins, with the SG92R servo (wing flapping) connected to D1 and the SG90-HV continuous rotation servo (rotation) connected to D2. Power and ground were shared across all components to ensure stable operation.
 <p align="center">
   <img src="Circuit connection layout.png" width="500">
 </p>
 <p align="center">
-  <em>Fig. X. Circuit connection layout</em>
+  <em>Fig. 8. Circuit connection layout</em>
 </p>
 
 The circuit was assembled through manual wiring and soldering. Due to the compact size of the ESP32C3 board, component placement and wiring had to be carefully arranged to avoid interference and maintain stable connections.
@@ -102,7 +109,7 @@ The circuit was assembled through manual wiring and soldering. Due to the compac
   <img src="Soldered circuit.jpg" width="500">
 </p>
 <p align="center">
-  <em>Fig. X. Soldered circuit</em>
+  <em>Fig. 9. Soldered circuit</em>
 </p>
 
 During implementation, particular attention was required for power connections, as the small VBAT pads made soldering difficult. This influenced the final power design and required adjustments to the overall system layout.
@@ -115,7 +122,7 @@ During implementation, particular attention was required for power connections, 
        style="width:30%; height:300px; object-fit:contain;" />
 </p>
 <p align="center">
-  <em>Fig. 6. Assembly of the butterfly device based on the 3D model</em>
+  <em>Fig. 10. Assembly of the butterfly device based on the 3D model</em>
 </p>
 
 Following the 3D modelling stage, the components were physically assembled into the enclosure. This stage involved integrating the microcontroller, servos, and distance sensor within the constrained internal space of the butterfly body.
@@ -127,7 +134,7 @@ The assembly process highlighted practical challenges such as limited space for 
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
 </p>
 <p align="center">
-  <em>Fig. 8. Final prototype</em>
+  <em>Fig. 11. Final prototype</em>
 </p>
 
 The final prototype successfully integrates sensing, actuation, and communication into a compact physical device. When tested in a real-world setting, the system was able to detect user presence and trigger both local and remote responses, demonstrating the core concept of translating physical activity into a perceivable signal across distance.
