@@ -8,83 +8,42 @@ Yitong Wu,
 Yuqian Lin.
 
 ## Introduction
+The capacity to communicate across distance has expanded significantly, yet the experience of shared physical presence remains difficult to replicate. While messaging and video calls enable efficient exchange, they often fail to convey the feeling of another person’s presence within one’s physical space. This challenge lies at the core of Connected Environments, which explores how digital systems and IoT technologies can bridge people and places.
 
-The capacity to communicate at a distance has expanded enormously but the experience of shared physical presence has proven considerably harder to replicate. While messaging and video calls enable efficient exchange, they often fail to convey an important dimension of human connection: the feeling of another person's presence within one's physical space. This challenge sits at the heart of Connected Environments which investigates how digital systems and IoT technologies can bridge people and places across distance. This project was developed as part of the Connected Environments Group Prototype and Pitch 25/26, with the brief to design a device or service that connects people across the miles.
+This project was developed within the Connected Environments Group Prototype and Pitch, focusing on communicating presence through non-screen-based interaction. Ishii and Ullmer’s concept of Tangible Bits provides a key foundation, demonstrating how digital information can be embedded in physical artefacts to support embodied interaction (Ishii & Ullmer, 1997). The project also draws on animistic design principles, using lifelike motion to evoke the presence of another person.
 
-Within this project, we were centrally concerned with communicating physicality through non-screen-based technology. Ishii and Ullmer's concept of Tangible Bits provided a foundational reference point, establishing that digital information can be embedded in physical artefacts to engage the body and environment rather than the screen alone (Ishii & Ullmer, 1997). Our project also draws on animism to translate the feeling of presence, by using the physical movement of something that looks alive to convey the sense of another person being in the room with you.
-
-This project, Butterfly Effect, addresses presence by proposing a networked interactive installation that transforms human presence into a tangible, physical signal.
-
+This project, Butterfly Effect, proposes a networked interactive installation that transforms human presence into a tangible physical signal.
 ### The Problem
-
-How can presence be made tangible across the miles?
+How can presence be made tangible across distance?
 
 ## Concept
+The Butterfly Effect Installation is inspired by the butterfly effect metaphor, where small actions can produce significant outcomes in interconnected systems (Lorenz, 1963). This concept is translated into an interaction design connecting two remote installations.
 
-The Butterfly Effect Installation
+Each butterfly is paired with a counterpart in another location. When a user interacts with one installation, both butterflies respond simultaneously through wing motion. In addition to immediate feedback, rotation represents accumulated presence over time.
 
-Inspired by the butterfly effect metaphor from chaos theory, this concept provides a theoretical framing where small initial actions can lead to disproportionate outcomes in complex systems (Lorenz, 1963). This principle is translated into interaction design and remote communication. Two installations of butterfly walls exist at two different locations. Each butterfly has a distance sensor and is paired to another butterfly from the other location. When a person moves past their installation both paired butterflies flutter simultaneously sharing a live signal of connection. One could be sitting at home, looking up at the wall of butterflies and see them flutter from left to right, meaning their loved one just moved through the space. When one installation is interacted with, the paired butterfly on the other installation rotates, this creates a cumulative record of presence throughout the day. If you notice all the butterflies are rotated in different directions, this is a sign a person has been there; if they are all aligned or unchanged, they have not.  The butterfly is therefore positioned as both a symbol and a mechanism through which minor everyday actions in one place generate a meaningful emotional effect elsewhere.
-
-By shifting communication from explicit information exchange to embodied environmental feedback, the installation explores alternative ways of mediating connection at a distance. Rather than transmitting messages or images, it asks whether presence itself (the simple fact of someone having been somewhere, or being there now) can be felt through a physical object. This moves the register of communication from the cognitive to the atmospheric: something you notice in the corner of your eye rather than something you read. Research in mediated social touch supports this direction, suggesting that non-verbal and haptic interaction can enhance emotional connectedness in remote communication more effectively than information-dense channels alone (van Erp & Toet, 2015)
+Rather than transmitting explicit information, the system enables presence to be perceived indirectly through motion. This aligns with research suggesting that non-verbal interaction can enhance emotional connection (van Erp & Toet, 2015).
 
 ## How It Works
+<p align="center"> <img src="Butterfly device system layout.png" width="1000"> </p> <p align="center"> <em>Fig. 1. Butterfly device system layout</em> </p>
 
-<p align="center">
-  <img src="Butterfly device system layout.png" width="1000">
-</p>
-<p align="center">
-  <em>Fig. 1. Butterfly device system layout</em>
-</p>
+At Location A, a distance sensor maps proximity to wing motion. This signal is transmitted to the paired device at Location B, which replicates the motion and adds rotational feedback.
 
-At Location A, a distance sensor detects the user's distance and maps it to the flapping frequency of the butterfly wings, with closer proximity resulting in faster motion. This interaction data is then transmitted to the paired device.
-At Location B, the butterfly responds by synchronizing its flapping behavior and additionally provides feedback through rotation along its wall-mounted base. This rotational movement encodes the duration or accumulation of interactions over time.
-By combining immediate feedback (flapping) with longer-term representation (rotation), the system enables both instant and accumulated expressions of presence. Each butterfly has its own independent microcontroler, sensor and actuators, meaning that the installation is modular, and accumulative butterfly units can be arranged on a wall to respond simultaneously to amplify the three dimensional effect of presence in the space.
+By combining real-time feedback (flapping) with longer-term representation (rotation), the system enables both immediate and accumulated expressions of presence. The modular design allows multiple butterflies to operate simultaneously.
 
 ## Design Process
 
-### Hardware 
-<p align="center">
-  <img src="hardware_1.png" width="30%" />
-  <img src="hardware_2.png" width="30%" />
-  <img src="hardware_3.png" width="30%" />
-</p>
-<p align="center">
-  <em>Fig. 2. Hardware</em>
-</p>
+### Hardware and Mechanism
+<p align="center"> <img src="hardware_1.png" width="30%" /> <img src="hardware_2.png" width="30%" /> <img src="hardware_3.png" width="30%" /> </p> <p align="center"> <em>Fig. 2. Hardware</em> </p>
 
-- The system was built around the XIAO ESP32C3 (Fig. 2), which provides both computation and wireless communication.
+The system is built around the XIAO ESP32C3 microcontroller, combined with a VL53L0X/VL53L1X distance sensor and two servo motors for flapping and rotation.
 
-- The A VL53L0X/VL53L1X (Fig. 2) time-of-flight sensor was used to detect human presence by measuring distance.
-  
-- Two servo motors were used for actuation: a SG92R servo (Fig. 2) which drives the flapping of the butterfly wings, and a SG90-HV continuous servo which drives the rotation to represent the duration of interaction.
+<p align="center"> <img src="https://github.com/user-attachments/assets/bad917df-0edb-43a8-a31f-ad038adc3989" width="800"> </p> <p align="center"> <em>Fig. 3. Mechanism development</em> </p>
 
-### The mechanism
+The mechanism evolved from a DC motor design to a servo-based system, improving control while requiring redesign of the enclosure.
 
-The design of the butterfly mechanism and enclosure evolved significantly throughout the project (Fig. 5). As an IoT device integrating both mechanical and digital components, the hardware, structure, and code were tightly coupled and continuously adapted.
+<p align="center"> <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" style="width:30%; height:300px; object-fit:contain;" /> </p> <p align="center"> <em>Fig. 4. 3D enclosure model</em> </p>
 
-<img width="1920" height="1080" alt="F6A2C7E4-8615-473A-9D37-93429B703A79" src="https://github.com/user-attachments/assets/bad917df-0edb-43a8-a31f-ad038adc3989" />
-</p>
-<p align="center">
-  <em>Fig. 5. Designing the butterfly mechanism</em>
-</p>
-
-Initially, a DC motor was used, resulting in a hinge-based wing system driven by continuous rotation. This was later replaced by a servo motor, shifting the mechanism to angle-based movement, which required corresponding modifications to the control code.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44"
-       style="width:30%; height:300px; object-fit:contain;" />
-  <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c"
-       style="width:30%; height:300px; object-fit:contain;" />
-  <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09"
-       style="width:30%; height:300px; object-fit:contain;" />
-</p>
-<p align="center">
-  <em>Fig. 6. 3D enclosure model</em>
-</p>
-
-This transition also impacted the enclosure design, as the servo had to be directly integrated into the wing assembly. The overall body therefore became more compact, with repeated redesigns to accommodate the updated mechanical and electronic layout.​ (Fig. 6)
-
-### The app  
+### The app 
 As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
 <p align="center">
   <img src="Add device.png" width="30%" />
@@ -95,14 +54,14 @@ As the devices themselves have no screen or onboard controls, the app was needed
   <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
 </p>
 
-### System workflow
-<p align="center">
-  <img src="System workflow.png" width="800">
-</p>
-<p align="center">
-  <em>Fig. 3. System workflow</em>
-</p>
-During operation, the sensor continuously monitors distance. When a user passes in from of the sensor within the detectable range, the ESP32C3 triggers the local wing motion of the 180 degree motor and simultaneously sends a signal via the mobile application to its paired remote device. The remote butterfly then replicates the flapping motion of the first butterfly (speed and angle depending on the distance to the butterfly) and rotates proportionally to the duration of the interaction, every 10s of interaction, the servo will rotate for 1s. enabling a real-time mapping from physical presence to mechanical feedback across distance. (Fig. 3)
+### System and Communication
+<p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
+
+The system integrates embedded software on the ESP32 and a Flutter mobile application. Devices are configured via Soft-AP, then operate in STA mode using Wi-Fi.
+
+Communication is divided into two layers: UDP for discovery and status updates, and TCP for control and pairing. Once paired, devices exchange signals to synchronise motion.
+
+<p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
 
 ## Development Process
 
