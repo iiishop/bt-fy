@@ -43,17 +43,6 @@ The mechanism evolved from a DC motor design to a servo-based system, improving 
 
 <p align="center"> <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" style="width:30%; height:300px; object-fit:contain;" /> </p> <p align="center"> <em>Fig. 4. 3D enclosure model</em> </p>
 
-### The app 
-As the devices themselves have no screen or onboard controls, the app was needed to support setup, device management, and pairing. A browser-based method would have required users to manually join the device hotspot, open a configuration page, and then search again for the device after it reconnected to Wi-Fi with a new IP address. By handling these steps through a single mobile app, the system made setup, control, and pairing more manageable for non-technical users and more efficient during prototyping.
-<p align="center">
-  <img src="Add device.png" width="30%" />
-  <img src="Configure Wifi.png" width="30%" />
-  <img src="Control and Pair.png" width="30%" />
-</p>
-<p align="center">
-  <em>Fig. 4. Screens from the mobile application showing device discovery, Wi-Fi provisioning, and the control/pairing interface.</em>
-</p>
-
 ### System and Communication
 <p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
 
