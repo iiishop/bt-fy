@@ -64,198 +64,101 @@ Communication is divided into two layers: UDP for discovery and status updates, 
 <p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
 
 ## Development Process
+The development followed an iterative prototyping approach, where hardware, mechanical design, and communication logic were refined through testing.
 
-### Wiring and soldering
-<p align="center">
-  <img src="Circuit connection layout.png" width="500">
-</p>
-<p align="center">
-  <em>Fig. 7. Circuit connection layout</em>
-</p>
+Initial prototypes focused on validating presence detection and motion. A DC motor was first used but lacked precision, leading to the adoption of servo motors for controlled movement.
 
-The distance sensor detects human presence in real time via I²C connection. When triggered, PWM signals from the microcontroller drive the two servo motors, one controlling the wing flapping, the other the rotational motion. (Fig. 7)
+Distance sensing was calibrated to ensure continuous mapping between proximity and motion, improving interaction quality. Communication between paired devices was also tested and refined to support synchronised behaviour.
 
-<p align="center">
-  <img src="Soldered circuit.jpg" width="500">
-</p>
-<p align="center">
-  <em>Fig. 8. Soldered circuit</em>
-</p>
+Integration revealed key constraints, particularly in power supply. Battery-based operation proved unreliable due to hardware limitations, leading to the use of a power bank. While this improved stability, it introduced trade-offs in weight and mechanical performance.
 
-The circuit was then soldered together (Fig. 8).
+Overall, the system evolved through repeated cycles of testing and refinement, balancing conceptual goals with practical constraints.
 
-#### Overall structure
-The software has two main parts. One runs on the ESP32 and handles sensing, actuation, and device-to-device communication. The other is a Flutter mobile application for setup, device management, and pairing. Both follow the same interaction flow. The embedded software, written in Rust, coordinates Wi-Fi, sensors, servos, and communication services through a central system module. The mobile app exposes those functions through a setup and control interface.
+### System and Communication
+<p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
 
-```mermaid
-flowchart TD
-    A[ESP32 startup] --> B[Initialise ToF sensor and servos]
-    B --> C[Soft-AP provisioning]
-    C --> D[Join home Wi-Fi in STA mode]
-    D --> E[UDP status broadcast]
-    D --> F[TCP control service]
-    B --> G[Distance sensing]
-    G --> H[Local butterfly motion]
-    F --> I[Binding and pairing]
-    I --> J[Remote synchronised response]
-    C --> K[Flutter app setup flow]
-    F --> L[Flutter app control and pairing flow]
-```
+The system integrates embedded software on the ESP32 and a Flutter mobile application. Devices are configured via Soft-AP and operate in STA mode.
 
-#### Embedded control and motion logic
-The ESP32 code is organised around a central system module. On startup, the program first initialises the ToF sensor, then the two servos, and only after that starts Wi-Fi and the related network services. Because two different ToF sensors were used during prototyping, the code first attempts to initialise the VL53L0X and falls back to the VL53L1X if that fails. The two servos are controlled through a shared LEDC timer. This keeps sensing, actuation, and communication in the same embedded program, while still allowing the network and provisioning functions to remain available if part of the hardware fails to initialise.
+Communication uses UDP for discovery and TCP for control. Once paired, devices exchange signals to synchronise motion.
 
-The local interaction logic is driven by the distance readings from the ToF sensor. A background control thread continuously reads the measured distance and adjusts both servo angle and motion period in response to how close the user is to the device. When a person approaches, the wings move faster; when the person moves away, the mechanism returns to an idle state. The response is therefore not a simple binary trigger. It changes continuously with proximity, which better matches the project's aim of expressing presence through movement (Fig. 9).
-<p align="center">
-  <img src="Servo.png">
-</p>
-<p align="center">
-  <em>Fig. 9. Servo control logic used to translate distance sensing into butterfly motion.</em>
-</p>
+<p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
 
-#### Provisioning and communication logic
-The networking code is divided into two stages. The first is provisioning. When the device starts, it opens a temporary Soft-AP so that the mobile app can connect to it. At this stage, the device accepts JSON commands such as `identify` and `config` over TCP and uses the supplied Wi-Fi credentials to join the home network. Once the connection succeeds, the device switches to STA mode and starts a second set of communication services: UDP broadcasts for discovery and status reporting, and a TCP control service for binding, unbinding, motor testing, pairing requests, and status queries.
+### Hardware Implementation
+<p align="center"> <img src="Circuit connection layout.png" width="500"> </p> <p align="center"> <em>Fig. 6. Circuit layout</em> </p>
 
-This workflow does more than bring the device online. It also supports the control and pairing steps that follow. The mobile app follows the same protocol as the embedded code: it scans for device hotspots, connects during setup, sends Wi-Fi credentials, and then continues to listen for device status and send control commands after the device rejoins the local network. The app also stores device records locally, tracks discovered IP addresses, polls pair status, and presents incoming pairing requests through the interface. In practice, it is part of the system's configuration, management, and pairing process rather than a separate display layer (Fig. 10).
+The system uses I²C for sensing and PWM signals for servo control.
 
-<p align="center">
-  <img src="SoftAP Pros.png">
-</p>
-<p align="center">
-  <em>Fig. 10. Provisioning and communication flow from Soft-AP setup to STA-mode operation.</em>
-</p>
+<p align="center"> <img src="Soldered circuit.jpg" width="500"> </p> <p align="center"> <em>Fig. 7. Soldered circuit</em> </p>
 
-#### Pairing and remote response
-The pairing logic extends the system beyond a single responsive object. Before pairing, each device responds only to its own sensor input. After pairing, the same local trigger can also activate synchronised behaviour on the remote device. To support this, the embedded software maintains binding state, paired device ID, peer IP address, trigger counts, and synchronisation leases, while key information is written to non-volatile storage so that the relationship can be restored after a reboot. The mobile app provides the interface for entering a device ID, sending a pairing request, receiving incoming requests, and updating pair status.
-
-```mermaid
-sequenceDiagram
-    participant AppA as App A
-    participant DevA as Device A
-    participant DevB as Device B
-    participant AppB as App B
-
-    AppA->>DevA: send pair_request(target device ID / IP)
-    DevA->>DevB: forward pair_request
-    DevB-->>AppB: show pending request
-    AppB->>DevB: accept pair
-    DevB-->>DevA: pair_accepted + peer info
-    DevA->>DevA: save paired device ID and peer IP
-    DevB->>DevB: save paired device ID and peer IP
-    Note over DevA,DevB: later local triggers can drive remote synchronised motion
-```
-
-When the device receives a successful pairing response, it updates the active pair state and writes the peer information to NVS. In its current form, this pairing logic depends on local-network discovery and direct TCP communication, so it is primarily a local-network implementation. The code already separates discovery, state persistence, and synchronisation control, which leaves room for future extension to wider-area networking (Fig. 11).
-
-<p align="center">
-  <img src="Pair.png">
-</p>
-<p align="center">
-  <em>Fig. 11. Pairing logic and remote response flow between two butterfly devices.</em>
-</p>
-
-#### Summary
-Taken together, this part of the project brings local sensing, mechanical motion, network provisioning, and remote linkage into the same system. The Rust-based embedded software handles sensing, actuation, and state synchronisation between devices, while the Flutter app makes configuration and pairing manageable from the user side. The result is a networked interactive system in which local bodily presence can be translated into physical feedback at a distance.
-
-## Final Prototype ##
+## Final Prototype and Evaluation
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b51f80df-9aa4-479b-bb22-5021ece7eaa6" width="493">
 </p>
 <p align="center">
-  <em>Fig. 12. Final prototype</em>
+  <em>Fig. 8. Final prototype</em>
 </p>
 
-The mechanics and enclosure were designed to be compact, integrating a microcontroller, two servos, a distance sensor, and a battery (which was ultimately not used), all housed beneath the wing structure.
+The final prototype successfully integrates sensing, actuation, and communication into a compact physical device. When tested in a real-world setting, the system was able to reliably detect user presence and trigger both local and remote responses, demonstrating the core concept of translating physical activity into a perceivable signal across distance.
 
-After experimenting with paper, card, leaves, and a range of fabrics for the wings, the material needed to balance flexibility and structure: it had to be supple enough to produce a subtle "flop" or "flutter" in motion, while remaining rigid enough to hold an upright form and retain its shape. Ripstop fabric best satisfied these requirements. The wings were laser-cut from this material and subsequently heat-pressed to fix the pleats, ensuring the folds held their intended form during movement.
+In terms of immediate interaction, the wing flapping behaviour proved effective. The mapping between user proximity and motion speed was clearly observable, allowing users to intuitively understand the relationship between their movement and the system’s response. This continuous mapping, rather than a simple binary trigger, contributed to a more natural and engaging interaction.
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/1a164af6-4e13-40f4-90c9-f8061acefe8e" width="4032" height="2983">
-</p>
-<p align="center">
-  <em>Fig. 13. Lasercut wings</em>
-</p>
+However, the performance of the rotational feedback was less consistent. Due to the limitations of the continuous servo and the constraints introduced by the external power supply, the rotation lacked precision and stability. As a result, the intended function of representing accumulated presence over time was only partially realised. While the concept was demonstrated, the clarity of this longer-term signal was reduced in practice.
 
-The circuit successfully supported the main functions of the system, including wing flapping and rotational feedback. However, several practical issues were identified during testing. The first attempt to use a 3.7V 400mAh Li-ion battery (Fig. 14) to power the system was unsuccessful due to the small and closely spaced VBAT pads on the XIAO ESP32C3, which made soldering difficult and prone to short circuits. In several cases, contact between terminals caused overheating and battery damage. As a result, a power bank (Fig. 14) was used instead, providing stable and safe power.
-<p align="center">
-  <img src="Li-ion Battery.jpg" width="35%" />
-  <img src="Power bank.jpg" width="35%" />
-</p>
-<p align="center">
-  <em>Fig. 14. Li-ion Battery and power bank</em>
-</p>
+From an experiential perspective, the system succeeded in creating a subtle sense of connection between two spaces. Users were able to notice activity through peripheral awareness, aligning with the project’s aim of ambient interaction. However, the interaction remained relatively minimal, and repeated exposure revealed a lack of variation in behaviour. This limited the system’s ability to convey richer or more nuanced forms of presence.
 
-### Communication and transmission
-Communication in the system follows the same two-stage structure described in the coding section. During initial setup, each device opens a temporary Soft-AP so that the mobile application can connect to it directly. Through this link, the app sends `identify` and `config` commands over TCP and passes the Wi-Fi credentials needed for the device to join the home network. This stage is short-lived, but it is necessary because the device has no screen or onboard controls. Once configuration is complete, the Soft-AP is closed and the device moves into STA mode. The provisioning flow shown earlier (Fig. 10) therefore also marks the point at which communication changes from local setup to normal operation.
-
-After joining the home network, the device begins broadcasting its status over UDP. Three message types are used in this stage: `hello`, `binding`, and `heartbeat`. `hello` keeps an unbound device discoverable on the local network; `binding` is used during the provisioning stage so that the app can confirm that configuration has completed and apply the correct bind token; and `heartbeat` is used once a device has already been bound, allowing the app to track whether it is online and to update its last known IP address. This broadcast layer is lightweight and continuous, which makes it suitable for discovery and status reporting. More specific actions, such as motor testing, binding, unbinding, sending pair requests, accepting or rejecting pair requests, and querying pair status, are handled separately through TCP commands. In this way, status reporting and active control are kept distinct rather than being mixed into a single channel.
-
-Transmission between paired devices is also mediated through this communication structure. In the current implementation, pairing depends on local-network discovery and direct TCP communication to the peer device. A pair request is sent from one device to the other, presented in the receiving user's app, and then either accepted or rejected. When pairing succeeds, both the paired device ID and peer IP address are written to non-volatile storage so that the relationship can be restored after reboot. Subsequent local triggers can then produce remote synchronised behaviour, with the embedded code maintaining trigger counts, synchronisation leases, and peer state to keep this exchange stable (Fig. 11). Taken together, these communication layers allow the system to move from setup, to local discovery, to paired remote interaction without requiring a browser-based interface or manual network configuration by the user.
-
-### Overall product performance **[(can mention the rotation there) (matilda)]**  
+Overall, the prototype demonstrates that the core concept is technically feasible and perceptually valid, but also highlights the gap between functional implementation and expressive interaction. While presence can be translated into motion, achieving meaningful and emotionally resonant communication requires a broader range of behaviours and more refined control mechanisms.
 
 ## Challenges 
-During development, we identified several practical challenges:​
+The development of the Butterfly Effect installation revealed a series of interconnected challenges that affected both technical performance and the quality of interaction.
 
-Power management​
-The butterflies rely on batteries, which discharge quickly during repeated sensing, communication, and motor actuation.​
+**1. Power management**  
+A primary limitation was power management. Although the system was initially designed to operate using a compact Li-ion battery, the small and fragile VBAT interface on the XIAO ESP32C3 made stable integration difficult. This led to unreliable connections and potential safety risks. As a result, the system was powered using an external power bank, which improved stability but introduced additional weight and restricted the movement of the device, particularly affecting the rotational mechanism.
 
-Charging and integration​
-Integrating the battery into the butterfly body is difficult because the VBAT connection on the XIAO ESP32C3 is very small and fragile, making soldering and long-term use less reliable.​
+**2. Mechanical precision and control**  
+Another challenge was mechanical precision and control. The use of a continuous rotation servo required time-based control rather than positional feedback, leading to inconsistencies in rotation. This limited the system’s ability to accurately represent accumulated presence over time, reducing the effectiveness of one of the core interaction features.
 
-Cost reduction​
-Building multiple butterfly pairs increases hardware cost, so component selection and structural simplification were important for scalability. ( components cost approx: 25 pounds in hardware alone per butterfly)​
+**3. Communication and synchronisation**  
+The system also faced challenges in communication and synchronisation. Maintaining real-time synchronised motion between paired devices required frequent updates, placing a significant load on the ESP32-C3. When sensing, actuation, and communication occurred simultaneously, delays or instability could arise, affecting responsiveness.
 
-Connection stability​
-The system depends on stable communication between devices and the mobile app. Network interruptions or unstable pairing can reduce responsiveness and reliability.​
+**4. Provisioning and usability**  
+Additionally, the provisioning process presented usability issues. The transition from Soft-AP setup to normal Wi-Fi operation relied on the behaviour of the user’s mobile device, which could not always be controlled programmatically. In some cases, manual intervention was required to reconnect to the correct network, reducing the overall smoothness of the user experience.
 
-Provisioning handoff reliability
-One challenge emerged during the transition from Soft-AP provisioning to normal Wi-Fi operation. On Android, the app could not directly force the phone to reconnect to a specific network after provisioning had finished. What the system could do was shut down the device's Soft-AP once configuration was complete. After that, the phone would disconnect from the temporary hotspot and reconnect according to Android's own network selection logic, usually favouring either the most frequently used network or the strongest previously known network. In practice, this meant that the phone did not always reconnect to the same Wi-Fi network that had just been configured for the device. In some cases, the user therefore had to switch the phone's Wi-Fi manually before the app could rediscover and control the device again.
-
-Synchronisation throughput
-A second challenge concerned the synchronisation of motion between paired devices. Once two butterflies were paired, the remote butterfly was expected to flap at the same speed as the locally triggered one. This required the system to maintain frequent synchronisation updates rather than sending only occasional trigger messages. However, synchronising speed at every tick placed a heavy load on communication between the two devices. To manage this, an additional channel or thread had to be introduced to coordinate the synchronisation process and reduce instability during continuous transmission.
-
-Shared communication load on the ESP32-C3
-A further challenge came from the limited resources of the ESP32-C3 itself. The device broadcasts state information over UDP while also receiving control commands through TCP. In practice, control operations could briefly occupy the device and delay state updates, especially when communication, sensing, and actuation were happening at the same time. This did not prevent the system from working, but it introduced moments where status reporting was less immediate than intended and made overall responsiveness harder to maintain consistently.
+These challenges highlight how hardware, software, and interaction design are tightly coupled, where limitations in one component directly influence the overall system performance.
 
 ## Improvements
-Based on the current limitations, we propose several directions for future improvement:​
+Based on the identified challenges, several targeted improvements can be proposed.
 
-Improved power system​
-Redesign the battery solution to increase capacity and support longer operation time, for example a "deep sleep mode", including safer and more accessible charging methods.​
+**1. Improved power system**  
+To address the limitations in power management, the system could integrate a dedicated battery management module and use a more robust power interface. Implementing low-power strategies such as deep sleep modes would also reduce energy consumption, enabling stable and portable operation without relying on an external power bank.
 
-Robust hardware integration​
-Develop a more reliable power connection to replace the fragile VBAT soldering, and improve internal structural design for durability.​
+**2. Enhanced mechanical precision and control**  
+To improve mechanical accuracy, the continuous rotation servo could be replaced with stepper motors or feedback-controlled servos. These alternatives would provide more precise and repeatable motion, allowing the system to more effectively represent accumulated presence over time.
 
-Cost optimization and scalability​
-Simplify the hardware and fabrication process to reduce cost, enabling deployment of larger networks of butterfly pairs.​
+**3. More efficient communication and synchronisation**  
+To reduce system load, the communication strategy could be optimised by decreasing the frequency of synchronisation updates and adopting more lightweight protocols. This would maintain the perception of real-time interaction while improving system stability and responsiveness.
 
-Enhanced communication stability​
-Improve the reliability of device-to-device communication and mobile app connectivity under real-world network conditions.​
+**4. More reliable provisioning and user experience**  
+To improve usability, the provisioning process could include better reconnection logic and clearer feedback during network transitions. Enhancing the app’s ability to rediscover devices after setup would reduce the need for manual intervention and create a smoother user experience.
 
-More reliable provisioning handoff
-The transition from Soft-AP provisioning to normal Wi-Fi operation could be made more reliable by improving the way the app and device recover after configuration. In future iterations, this could include clearer user feedback during network switching, stronger reconnection logic once the device rejoins the home network, and a more robust way of rediscovering the device after the phone leaves the temporary hotspot.
+In addition to these technical improvements, future iterations could explore richer interaction behaviours—such as varying motion patterns, speed, or rhythm—to enhance the expressive and emotional quality of the system.
 
-More efficient synchronisation
-The current synchronisation method could be improved by reducing the amount of communication required to keep two paired butterflies moving at the same speed. Rather than relying on very frequent updates, future versions could explore lighter synchronisation strategies that preserve the sense of simultaneity while lowering network overhead.
-
-Better communication scheduling on the ESP32-C3
-Because status broadcasting and control commands currently share the limited resources of the ESP32-C3, future development could improve how these tasks are scheduled. A more efficient separation of status updates, control traffic, and synchronisation traffic would help reduce temporary delays and make responsiveness more consistent during sustained use.
-
-Richer interaction and emotional expression​
-Extend the system to encode more information (e.g., intensity, frequency, patterns) to represent different types of presence or emotional states.
-​
 ## Reflections
-In this project, a networked physical system was designed and built to transform human presence into a tangible and observable signal. The Butterfly Effect system enables users to perceive the presence of others across distance in a subtle and intuitive way. Unlike conventional digital communication, this approach emphasizes physical feedback and emotional awareness, creating a more meaningful connection between people.
+This project demonstrates the potential of physical computing to support remote, embodied interaction. By translating human presence into physical motion, it offers an alternative to screen-based communication and explores more ambient forms of connection.
 
-While the prototype demonstrates the potential of IoT systems for remote, embodied interaction, several limitations remain. The use of a power bank, although improving reliability, introduced additional size and weight that interfered with the butterfly's rotational movement, reducing the effectiveness of the physical interaction. Furthermore, instability caused by manual wiring highlights the limitations of ad-hoc prototyping in compact embedded systems.
+However, a critical gap remains between conceptual ambition and technical implementation. While inspired by the butterfly effect, the system primarily indicates activity rather than fully conveying presence. The interaction successfully signals that “someone is there,” but it does not always communicate the richness or emotional nuance of that presence.
 
-These challenges reveal a trade-off between electrical reliability and mechanical performance, indicating the need for more integrated and robust design solutions in future iterations. Overall, the project shows that small physical actions can be translated into meaningful connections across distance.​
+This raises a broader question about the effectiveness of minimal physical signals in expressing complex human connection. While subtlety aligns with the project’s design intention, it can also lead to ambiguity, particularly when the interaction lacks variation or contextual cues.
+
+The project highlights the need to balance simplicity, expressiveness, and technical feasibility in Connected Environments. While reducing interaction to minimal physical cues creates a calm and ambient experience, it also limits the amount of information that can be communicated.
+
+Despite these limitations, the project demonstrates that even simple physical interactions can create meaningful connections across distance. It provides valuable insight into how IoT systems can move beyond information exchange to support more experiential and emotionally aware forms of communication.
 
 ### Team Contributions
-Wu Yitong: The hardware and circuit design were completed, including component integration, wiring, and assembly. System testing and debugging were carried out to identify and address issues related to servo control and power supply. The report and README were also structured and developed.
+Wu Yitong: Hardware design and circuit integration, including wiring, assembly, system testing, and report writing.
 
-Lin Yuqian: All software and code-related parts of the project were developed, including the mobile application, the ESP32 communication protocol, device provisioning, local network discovery, binding, pairing, control functions, and the hardware control logic for sensing and actuation. The coordination between the Flutter app and the ESP32 system was implemented and refined to support setup, status monitoring, and synchronised interaction between paired devices. The app, coding, and communication sections of the report were also written and developed.
+Lin Yuqian: Software development, including the mobile app, ESP32 communication, system integration, and report writing.
+
+Matilda Nelson: 3D modelling and fabrication, including the butterfly enclosure, laser-cut wings, video production, and report writing.
 
 ### References
 	Ishii, H. and Ullmer, B. (1997) 'Tangible bits: Towards seamless interfaces between people, bits and atoms', Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI '97), pp. 234–241.
