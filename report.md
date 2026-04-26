@@ -33,35 +33,42 @@ By combining real-time feedback (flapping) with longer-term representation (rota
 ## Design Process
 
 ### Hardware and Mechanism
-<p align="center"> <img src="hardware_1.png" width="30%" /> <img src="hardware_2.png" width="30%" /> <img src="hardware_3.png" width="30%" /> </p> <p align="center"> <em>Fig. 2. Hardware</em> </p>
+The physical design of the butterfly installation was developed around three requirements: detecting human presence, producing visible wing movement, and remaining compact enough to be mounted as part of a wall-based installation. The system therefore combines sensing, computation, and actuation within a small embedded device.
 
-The system is built around the XIAO ESP32C3 microcontroller, combined with a VL53L0X/VL53L1X distance sensor and two servo motors for flapping and rotation.
+<p align="center"> <img src="hardware_1.png" width="30%" /> <img src="hardware_2.png" width="30%" /> <img src="hardware_3.png" width="30%" /> </p> <p align="center"> <em>Fig. 2. Hardware components used in the prototype</em> </p>
+
+The XIAO ESP32C3 was selected as the main controller because it provides compact size, Wi-Fi capability, and sufficient GPIO support for the sensor and actuators. A VL53L0X/VL53L1X time-of-flight distance sensor was used to detect user proximity, allowing the system to respond not only to whether someone is present, but also to how close they are. This was important because the interaction was designed as a continuous signal rather than a simple on/off trigger.
+
+Two servo motors were used to create different layers of feedback. The SG92R positional servo controls the flapping of the butterfly wings, providing immediate feedback when presence is detected. The SG90-HV continuous rotation servo was included to represent accumulated interaction over time through slow rotation. This separation between flapping and rotation allowed the installation to communicate both instant presence and longer-term traces of activity.
+
+The mechanism design evolved significantly during the project. Early versions explored a DC motor and hinge-based mechanism, but this approach made precise control difficult. The design therefore shifted toward a servo-based mechanism, which allowed more predictable wing movement and better control through code.
 
 <p align="center"> <img src="https://github.com/user-attachments/assets/bad917df-0edb-43a8-a31f-ad038adc3989" width="800"> </p> <p align="center"> <em>Fig. 3. Mechanism development</em> </p>
 
-The mechanism evolved from a DC motor design to a servo-based system, improving control while requiring redesign of the enclosure.
+The enclosure was developed through 3D modelling to accommodate the microcontroller, servos, sensor, wiring, and wing structure. The model had to balance technical constraints with the visual character of the object. Since the butterfly was intended to feel expressive rather than purely functional, the enclosure needed to hide the electronics while still supporting visible mechanical motion.
 
-<p align="center"> <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c" style="width:30%; height:300px; object-fit:contain;" /> <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" style="width:30%; height:300px; object-fit:contain;" /> </p> <p align="center"> <em>Fig. 4. 3D enclosure model</em> </p>
+<p align="center"> <img src="https://github.com/user-attachments/assets/d92817bf-e6ee-4ccb-bb79-7bcb48281a09" style="width:45%; height:300px; object-fit:contain;" /> </p> <p align="center"> <em>Fig. 4. 3D enclosure model</em> </p>
 
-### System and Communication
-<p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
+This modelling process showed how closely mechanical design, electronics, and interaction logic were connected. Changes in motor choice affected the enclosure, while the available space inside the body affected wiring and assembly. As a result, the form of the butterfly was not only aesthetic, but directly shaped by the technical requirements of the system.
 
-The system integrates embedded software on the ESP32 and a Flutter mobile application. Devices are configured via Soft-AP, then operate in STA mode using Wi-Fi.
+### Interaction and System Design
+The interaction design was based on the idea of turning human presence into an ambient physical signal. Instead of using screens, text, or notifications, the system communicates through subtle movement. When a person approaches one butterfly, the wings flap; when the interaction continues, rotation provides a slower record of accumulated presence.
 
-Communication is divided into two layers: UDP for discovery and status updates, and TCP for control and pairing. Once paired, devices exchange signals to synchronise motion.
+The system was designed to work as a pair of connected devices. Each butterfly has its own sensor, microcontroller, and actuators, making the installation modular. This means that multiple butterflies can be arranged on one wall and paired with butterflies in another location. When triggered, several butterflies could respond simultaneously, making the feeling of presence more visible and spatial.
 
-<p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
+A mobile application was included because the devices have no screen or onboard interface. The app supports setup, Wi-Fi configuration, device discovery, and pairing. This avoids requiring users to manually configure the device through a browser or command-line interface, making the prototype easier to use and demonstrate.
 
+The communication design separates setup from normal operation. During setup, the device opens a temporary Soft-AP so the user can send Wi-Fi credentials through the app. After this, the device joins the local network in STA mode. UDP is used for lightweight discovery and status updates, while TCP is used for control commands and pairing. This structure was chosen to keep discovery and direct control separate, improving clarity in the system architecture.
 ## Development Process
-The development followed an iterative prototyping approach, where hardware, mechanical design, and communication logic were refined through testing.
+The development process followed an iterative approach, where the system evolved from early mechanical prototypes to a fully integrated connected device.
 
-Initial prototypes focused on validating presence detection and motion. A DC motor was first used but lacked precision, leading to the adoption of servo motors for controlled movement.
+Initial experiments focused on validating wing movement using simple mechanisms. A DC motor was first tested, but was later replaced with a servo motor to achieve more controlled and stable motion. This required adjustments to both the mechanical structure and control logic.
 
-Distance sensing was calibrated to ensure continuous mapping between proximity and motion, improving interaction quality. Communication between paired devices was also tested and refined to support synchronised behaviour.
+Material exploration was also carried out to refine the wing behaviour, leading to the selection of ripstop fabric for its balance of flexibility and structural stability.
 
-Integration revealed key constraints, particularly in power supply. Battery-based operation proved unreliable due to hardware limitations, leading to the use of a power bank. While this improved stability, it introduced trade-offs in weight and mechanical performance.
+As development progressed, sensing, actuation, and networking components were gradually integrated into a single system. This process involved repeated testing and refinement to ensure that the different parts of the system could operate together reliably.
 
-Overall, the system evolved through repeated cycles of testing and refinement, balancing conceptual goals with practical constraints.
+These iterations demonstrate how the prototype evolved through continuous adjustment, rather than being developed as a single fixed design.
 
 ### System and Communication
 <p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
@@ -87,32 +94,32 @@ The system uses I²C for sensing and PWM signals for servo control.
   <em>Fig. 8. Final prototype</em>
 </p>
 
-The final prototype successfully integrates sensing, actuation, and communication into a compact physical device. When tested in a real-world setting, the system was able to reliably detect user presence and trigger both local and remote responses, demonstrating the core concept of translating physical activity into a perceivable signal across distance.
+The final prototype successfully integrates sensing, actuation, and communication into a compact physical device. When tested in a real-world setting, the system was able to detect user presence and trigger both local and remote responses, demonstrating the core concept of translating physical activity into a perceivable signal across distance.
 
-In terms of immediate interaction, the wing flapping behaviour proved effective. The mapping between user proximity and motion speed was clearly observable, allowing users to intuitively understand the relationship between their movement and the system’s response. This continuous mapping, rather than a simple binary trigger, contributed to a more natural and engaging interaction.
+The wing flapping behaviour performed reliably and provided clear real-time feedback. The relationship between user proximity and motion speed was observable and intuitive, allowing users to understand how their movement influenced the system.
 
-However, the performance of the rotational feedback was less consistent. Due to the limitations of the continuous servo and the constraints introduced by the external power supply, the rotation lacked precision and stability. As a result, the intended function of representing accumulated presence over time was only partially realised. While the concept was demonstrated, the clarity of this longer-term signal was reduced in practice.
+In contrast, the rotational feedback was less consistent. While the system demonstrated the intended behaviour, the motion was not always stable or clearly interpretable as a long-term representation of presence.
 
-From an experiential perspective, the system succeeded in creating a subtle sense of connection between two spaces. Users were able to notice activity through peripheral awareness, aligning with the project’s aim of ambient interaction. However, the interaction remained relatively minimal, and repeated exposure revealed a lack of variation in behaviour. This limited the system’s ability to convey richer or more nuanced forms of presence.
+From an interaction perspective, the system created a subtle sense of connection between two spaces. However, the range of behaviours remained limited, and the interaction could become repetitive over time. This reduced the system’s ability to convey more nuanced or varied forms of presence.
 
-Overall, the prototype demonstrates that the core concept is technically feasible and perceptually valid, but also highlights the gap between functional implementation and expressive interaction. While presence can be translated into motion, achieving meaningful and emotionally resonant communication requires a broader range of behaviours and more refined control mechanisms.
+Overall, the prototype demonstrates that the core concept is technically feasible and perceptually understandable, but the expressiveness of the interaction remains limited.
 
-## Challenges 
+## Challenges
 The development of the Butterfly Effect installation revealed a series of interconnected challenges that affected both technical performance and the quality of interaction.
 
 **1. Power management**  
-A primary limitation was power management. Although the system was initially designed to operate using a compact Li-ion battery, the small and fragile VBAT interface on the XIAO ESP32C3 made stable integration difficult. This led to unreliable connections and potential safety risks. As a result, the system was powered using an external power bank, which improved stability but introduced additional weight and restricted the movement of the device, particularly affecting the rotational mechanism.
+A primary limitation was power management. The system was initially designed to operate using a compact Li-ion battery, but the small and fragile VBAT interface on the XIAO ESP32C3 made stable integration difficult. This led to unreliable connections and potential safety risks. As a result, an external power bank was used, which improved stability but introduced additional weight and restricted movement.
 
 **2. Mechanical precision and control**  
-Another challenge was mechanical precision and control. The use of a continuous rotation servo required time-based control rather than positional feedback, leading to inconsistencies in rotation. This limited the system’s ability to accurately represent accumulated presence over time, reducing the effectiveness of one of the core interaction features.
+The use of a continuous rotation servo required time-based control rather than positional feedback, leading to inconsistencies in rotation. This reduced the system’s ability to accurately represent accumulated presence over time.
 
 **3. Communication and synchronisation**  
-The system also faced challenges in communication and synchronisation. Maintaining real-time synchronised motion between paired devices required frequent updates, placing a significant load on the ESP32-C3. When sensing, actuation, and communication occurred simultaneously, delays or instability could arise, affecting responsiveness.
+Maintaining synchronised behaviour between paired devices required frequent updates, placing a significant load on the ESP32-C3. When sensing, actuation, and communication occurred simultaneously, delays or instability could arise.
 
 **4. Provisioning and usability**  
-Additionally, the provisioning process presented usability issues. The transition from Soft-AP setup to normal Wi-Fi operation relied on the behaviour of the user’s mobile device, which could not always be controlled programmatically. In some cases, manual intervention was required to reconnect to the correct network, reducing the overall smoothness of the user experience.
+The transition from Soft-AP setup to normal Wi-Fi operation depended on the behaviour of the user’s mobile device, which could not always be controlled programmatically. This sometimes required manual reconnection, reducing the smoothness of the user experience.
 
-These challenges highlight how hardware, software, and interaction design are tightly coupled, where limitations in one component directly influence the overall system performance.
+These challenges highlight how hardware, software, and interaction design are tightly coupled, where limitations in one component influence overall system performance.
 
 ## Improvements
 Based on the identified challenges, several targeted improvements can be proposed.
