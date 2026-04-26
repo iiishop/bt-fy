@@ -37,9 +37,9 @@ The physical design of the butterfly installation was developed around three req
 
 <p align="center"> <img src="hardware_1.png" width="30%" /> <img src="hardware_2.png" width="30%" /> <img src="hardware_3.png" width="30%" /> </p> <p align="center"> <em>Fig. 2. Hardware components used in the prototype</em> </p>
 
-The XIAO ESP32C3 was selected as the main controller because it provides compact size, Wi-Fi capability, and sufficient GPIO support for the sensor and actuators. A VL53L0X/VL53L1X time-of-flight distance sensor was used to detect user proximity, allowing the system to respond not only to whether someone is present, but also to how close they are. This was important because the interaction was designed as a continuous signal rather than a simple on/off trigger.
+The XIAO ESP32C3 was selected as the main controller for its compact size, built-in Wi-Fi capability, and sufficient GPIO support. A VL53L0X/VL53L1X time-of-flight sensor was used to detect user proximity, enabling the system to respond continuously rather than through a simple on/off trigger.
 
-Two servo motors were used to create different layers of feedback. The SG92R positional servo controls the flapping of the butterfly wings, providing immediate feedback when presence is detected. The SG90-HV continuous rotation servo was included to represent accumulated interaction over time through slow rotation. This separation between flapping and rotation allowed the installation to communicate both instant presence and longer-term traces of activity.
+Two servo motors provided layered feedback: an SG92R positional servo for wing flapping as immediate response, and an SG90-HV continuous rotation servo to represent accumulated interaction over time. This combination allowed the system to communicate both real-time presence and longer-term activity.
 
 The mechanism design evolved significantly during the project. Early versions explored a DC motor and hinge-based mechanism, but this approach made precise control difficult. The design therefore shifted toward a servo-based mechanism, which allowed more predictable wing movement and better control through code.
 
@@ -162,8 +162,6 @@ Maintaining synchronised behaviour between paired devices required frequent upda
 **4. Provisioning and usability**  
 The transition from Soft-AP setup to normal Wi-Fi operation depended on the behaviour of the user’s mobile device, which could not always be controlled programmatically. This sometimes required manual reconnection, reducing the smoothness of the user experience.
 
-These challenges highlight how hardware, software, and interaction design are tightly coupled, where limitations in one component influence overall system performance.
-
 ## Improvements
 Based on the identified challenges, several targeted improvements can be proposed.
 
@@ -178,8 +176,6 @@ To reduce system load, the communication strategy could be optimised by decreasi
 
 **4. More reliable provisioning and user experience**  
 To improve usability, the provisioning process could include better reconnection logic and clearer feedback during network transitions. Enhancing the app’s ability to rediscover devices after setup would reduce the need for manual intervention and create a smoother user experience.
-
-In addition to these technical improvements, future iterations could explore richer interaction behaviours—such as varying motion patterns, speed, or rhythm—to enhance the expressive and emotional quality of the system.
 
 ## Reflections
 This project demonstrates the potential of physical computing to support remote, embodied interaction. By translating human presence into physical motion, it offers an alternative to screen-based communication and explores more ambient forms of connection.
