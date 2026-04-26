@@ -91,22 +91,7 @@ The mobile application supports device onboarding, network configuration, and pa
   <img src="Configure Wifi.png" width="30%" />
   <img src="Control and Pair.png" width="30%" />
 </p>
-```mermaid
-sequenceDiagram
-    participant AppA as App A
-    participant DevA as Device A
-    participant DevB as Device B
-    participant AppB as App B
 
-    AppA->>DevA: send pair_request(target device ID / IP)
-    DevA->>DevB: forward pair_request
-    DevB-->>AppB: show pending request
-    AppB->>DevB: accept pair
-    DevB-->>DevA: pair_accepted + peer info
-    DevA->>DevA: save paired device ID and peer IP
-    DevB->>DevB: save paired device ID and peer IP
-    Note over DevA,DevB: later local triggers can drive remote synchronised motion
-```
 
 The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
 
