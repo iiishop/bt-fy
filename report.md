@@ -73,8 +73,6 @@ These iterations demonstrate how the prototype evolved through continuous adjust
 ### System and Communication
 <p align="center"> <img src="System workflow.png" width="800"> </p> <p align="center"> <em>Fig. 5. System workflow</em> </p>
 
-### System and Communication
-
 The system implementation integrates embedded software on the ESP32 with a Flutter mobile application, forming a distributed architecture that supports sensing, actuation, and remote interaction.
 
 On the embedded side, the ESP32 is responsible for handling distance sensing, servo control, and network communication. The distance sensor continuously measures proximity and provides input to the control logic, which maps the sensed values to motion parameters such as flapping speed and timing. This mapping enables a continuous interaction rather than a simple binary trigger.
@@ -88,8 +86,6 @@ The pairing mechanism enables two devices to form a persistent connection. Once 
 <p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
 
 ### Hardware Implementation
-### Hardware Implementation
-
 The hardware implementation focuses on integrating sensing, actuation, and control within a compact physical structure.
 
 The VL53L0X/VL53L1X distance sensor is connected to the XIAO ESP32C3 via an I²C interface, enabling continuous distance measurement. The sensor provides real-time proximity data, which is used as the primary input for the interaction logic.
@@ -115,6 +111,23 @@ The circuit was assembled through manual wiring and soldering. Due to the compac
 During implementation, particular attention was required for power connections, as the small VBAT pads made soldering difficult. This influenced the final power design and required adjustments to the overall system layout.
 
 Overall, the hardware implementation demonstrates how sensing, actuation, and embedded control can be combined within a constrained physical form to support interactive behaviour.
+
+### Assembly and Integration
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44"
+       style="width:30%; height:300px; object-fit:contain;" />
+  <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c"
+       style="width:30%; height:300px; object-fit:contain;" />
+</p>
+<p align="center">
+  <em>Fig. 6. Assembly of the butterfly device based on the 3D model</em>
+</p>
+
+Following the 3D modelling stage, the components were physically assembled into the enclosure. This stage involved integrating the microcontroller, servos, and distance sensor within the constrained internal space of the butterfly body.
+
+The assembly process highlighted practical challenges such as limited space for wiring, alignment of mechanical parts, and stability of component connections. Adjustments were required to ensure that the wing mechanism could move freely while maintaining a compact and stable structure.
+
+This step demonstrates the transition from digital design to physical implementation, where design decisions were validated and refined through real-world assembly.
 
 ## Final Prototype and Evaluation
 <p align="center">
