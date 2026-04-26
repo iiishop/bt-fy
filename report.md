@@ -137,29 +137,37 @@ From an interaction perspective, the system created a sense of connection betwee
 ## Challenges
 
 **1.Power management**
+
 The system was designed to operate using a compact Li-ion battery, but the small and fragile VBAT interface on the XIAO ESP32C3 made stable integration difficult, leading to unreliable connections and safety risks. An external power bank was used instead, which improved stability but introduced additional weight and restricted movement.
 
 **2. Mechanical precision and control**
+
 The continuous rotation servo required time-based control rather than positional feedback, leading to inconsistencies in rotation and reducing the system's ability to accurately represent accumulated presence over time.
 
 **3. Communication and synchronisation**
+
 Maintaining synchronised behaviour between paired devices required frequent updates, placing a significant load on the ESP32-C3. When sensing, actuation, and communication occurred simultaneously, delays or instability could arise.
 
 **4. Provisioning and usability**
+
 The transition from Soft-AP setup to normal Wi-Fi operation depended on the behaviour of the user's mobile device, which could not always be controlled programmatically, sometimes requiring manual reconnection.
 
 ## Improvements
 
 **1. Improved power system**
+
 The system could integrate a dedicated battery management module and more robust power interface, alongside low-power strategies such as deep sleep modes, enabling stable and portable operation without relying on an external power bank.
 
 **2. Enhanced mechanical precision and control**
+
 Replacing the continuous rotation servo with stepper motors or feedback-controlled servos would provide more precise and repeatable motion, allowing the system to more effectively represent accumulated presence over time.
 
 **3. More efficient communication and synchronisation**
+
 Decreasing the frequency of synchronisation updates and adopting more lightweight protocols would reduce system load while maintaining the perception of real-time interaction and improving overall stability.
 
 **4. More reliable provisioning and user experience**
+
 Improved reconnection logic and clearer feedback during network transitions would reduce the need for manual intervention, making setup smoother and the app more reliable at rediscovering devices.
 
 ## Reflections
@@ -168,6 +176,7 @@ The Butterfly Effect installation demonstrates that imbuing a physical object wi
 In retrospect, the purpose of the installation was not defined clearly enough from the start. If the goal was to communicate presence between two specific people, a single more developed butterfly with a richer set of features, different flapping rhythms meaning different things, additional actuators, would have served that better. If the goal was instead to create an ambient sense of presence within a space, the wall format makes more sense, but as a cultural or public installation rather than a consumer product, where the cost and installation method are more appropriate and power could be resolved by integrating directly into a wall. The two directions call for quite different objects, and trying to serve both may have limited how well the project achieved either.
 
 ### Team Contributions
+
 Wu Yitong: Hardware design and circuit integration, including wiring, assembly, system testing, and report writing.
 
 Lin Yuqian: Software development, including the mobile app, ESP32 communication, system integration, and report writing.
