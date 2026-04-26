@@ -79,19 +79,11 @@ Communication is divided into two channels. UDP is used for lightweight broadcas
 
 The pairing mechanism enables two devices to form a persistent connection. Once paired, local sensing events trigger synchronised behaviour on the remote device. This is achieved by transmitting motion-related parameters, allowing the paired device to replicate the interaction in real time. The system therefore supports a distributed interaction model, where local physical activity is translated into remote mechanical feedback.
 <p align="center">
-  <img src="PAIR_SEQUENCE.png" width="900">
+  <img src="imageE.png" width="900">
 </p>
 <p align="center">
   <em>Fig. 8. Device pairing and synchronised interaction sequence</em>
 </p>
-
-The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
-<p align="center">
-  <img src="Add device.png" width="30%" />
-  <img src="Configure Wifi.png" width="30%" />
-  <img src="Control and Pair.png" width="30%" />
-</p>
-
 
 The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
 
