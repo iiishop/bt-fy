@@ -117,9 +117,9 @@ During implementation, particular attention was required for power connections, 
 ### Assembly and Integration
 <p align="center">
   <img src="https://github.com/user-attachments/assets/4f363396-4541-494d-89bd-e356d7f14c44"
-       style="width:30%; height:300px; object-fit:contain;" />
+       style="width:30%; height:500px; object-fit:contain;" />
   <img src="https://github.com/user-attachments/assets/882b2b29-88d5-48c4-8e52-59b8bc41721c"
-       style="width:30%; height:300px; object-fit:contain;" />
+       style="width:30%; height:500px; object-fit:contain;" />
 </p>
 <p align="center">
   <em>Fig. 10. Assembly of the butterfly device based on the 3D model</em>
