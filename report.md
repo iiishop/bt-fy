@@ -82,8 +82,24 @@ The system uses a two-stage communication workflow. During setup, the device ope
 Communication is divided into two channels. UDP is used for lightweight broadcasting of device status and discovery, allowing the mobile application to detect available devices on the network. TCP is used for control operations, including device configuration, pairing requests, and interaction commands. This separation ensures that continuous status updates do not interfere with critical control messages.
 
 The pairing mechanism enables two devices to form a persistent connection. Once paired, local sensing events trigger synchronised behaviour on the remote device. This is achieved by transmitting motion-related parameters, allowing the paired device to replicate the interaction in real time. The system therefore supports a distributed interaction model, where local physical activity is translated into remote mechanical feedback.
+<p align="center">
+  <img src="PAIR_SEQUENCE.png" width="900">
+</p>
+<p align="center">
+  <em>Fig. 8. Device pairing and synchronised interaction sequence</em>
+</p>
 
-<p align="center"> <img src="Add device.png" width="30%" /> <img src="Configure Wifi.png" width="30%" /> <img src="Control and Pair.png" width="30%" /> </p>
+The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
+<p align="center">
+  <img src="Add device.png" width="30%" />
+  <img src="Configure Wifi.png" width="30%" />
+  <img src="Control and Pair.png" width="30%" />
+</p>
+<p align="center">
+  <em>Fig. X. Mobile application interface for device setup, Wi-Fi configuration, and pairing</em>
+</p>
+
+The mobile application supports device onboarding, network configuration, and pairing, providing a simple interface for users to connect and manage butterfly devices without requiring manual network setup.
 
 ### Hardware Implementation
 The hardware implementation focuses on integrating sensing, actuation, and control within a compact physical structure.
